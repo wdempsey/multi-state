@@ -1,88 +1,76 @@
-compute.pdf <- function(trans.matrix,beta.matrix, rho) {
+compute.pdf <- function(trans.matrix,beta.vector, rho) {
   # Trans.matrix (diag is r_11, ...., r_kk; off-diagonal are those who transition))
   f2 <- function(x) {
     log.total = (rho-1)* log(x) - log(1-x)
     for (i in 1:nrow(trans.matrix)) {
-      stick.break = 1; sub.total = 0
-      for (j in 1:ncol(trans.matrix)) {
-        if(i != j) {
-          if(beta.matrix[i,j] != Inf) {
-            log.total = log.total + trans.matrix[i,j] * ( log(stick.break) + beta.matrix[i,j] * log(x) )
-            sub.total = sub.total + stick.break * x^beta.matrix[i,j]
-            stick.break = stick.break * (1 - x^beta.matrix[i,j])
-          }
-        }
-      }
-      log.total = log.total + trans.matrix[i,i] * log( 1 - sub.total)
+      log.total = log.total + sum(trans.matrix[i,-i]) * log(1-x^beta.vector[i]) + trans.matrix[i,i]*beta.vector[i]*log(x)
     }
     return( exp(log.total) )
   }
   return(f2)
 }
 
-q.split <- function(trans.matrix, beta.matrix, rho, tol = 0.000001) {
-  temp = compute.pdf(trans.matrix,beta.matrix, rho)
-  return(integrate(temp,0.00,tol)$value + integrate(temp,tol,1)$value)
+q.split <- function(trans.matrix, beta.vector, alpha.matrix, rho, tol = 0.000001) {
+  temp = compute.pdf(trans.matrix,beta.vector, rho)
+  temp.integrate = integrate(temp,0.00,tol)$value + integrate(temp,tol,1)$value
+  temp.total = 0
+  for (i in 1:nrow(trans.matrix)) {
+    temp.row.sum = trans.matrix[i,-i] + alpha.matrix[i,-i]
+    temp.total = temp.total + sum(lgamma(temp.row.sum[temp.row.sum>0])) - lgamma(sum(temp.row.sum[temp.row.sum>0]))
+  }
+  return(temp.total + temp.integrate)
 }
 
-compute.normalizing <- function(n.vector, beta.matrix, rho) {
+compute.normalizing <- function(n.vector, beta.vector, rho) {
   f2 <- function(x) {
-    log.total = (rho-1)* log(1-x) - log(x)
-    temp.log.total = 0
+    log.total = (rho-1)* log(x) - log(1-x)
     for (i in 1:length(n.vector)) {
-      stick.break = 1; sub.total = 0
-      for (j in 1:ncol(beta.matrix)) {
-        if (i != j) {
-          sub.total = sub.total + stick.break * x^beta.matrix[i,j]
-          stick.break = stick.break * (1 - x^beta.matrix[i,j])
-        }
-      }
-      temp.log.total = temp.log.total + n.vector[i] * log(1-sub.total)
+      log.total = log.total + n.vector[i] * log(1-x^beta.vector[i])
     }
-    log.total = log(1 - exp(temp.log.total)) + log.total
     return( exp(log.total) )
   }
   return(f2)
 }
 
-zeta <- function(n.vector, beta.matrix, rho) {
-  temp = compute.normalizing(n.vector, beta.matrix, rho)
+zeta <- function(n.vector, beta.vector, rho) {
+  temp = compute.normalizing(n.vector, beta.vector, rho)
   return(integrate(temp,0,1)$value)
 }
 
-zeta.mapply <- function(beta.matrix, rho) {
+zeta.mapply <- function(beta.vector, rho) {
   interior.zeta <- function(num.nocav, num.mild, num.severe) {
     n.vector = c(num.nocav, num.mild, num.severe)
-    temp = compute.normalizing(n.vector, beta.matrix, rho)
+    temp = compute.normalizing(n.vector, beta.vector, rho)
     return(integrate(temp,0,1)$value)
   }
   return(interior.zeta)
 }
 
-lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho) {
+lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho, psi) {
   n.vector = rowSums(trans.matrix)
-  nu = params[1:2]; beta.alive = c(params[3:5]); beta.dead = c(params[6:7])
+  # Alternative just for mapply functionality
+  nu = params[1:2]; beta.alive = c(1,params[3:4]); beta.dead = c(1,params[5:6]); 
+  alpha.alive = params[7]
   # Setup up alive matrix
-  beta.alive.matrix = matrix(Inf, nrow = 3, ncol = 3)
-  beta.alive.matrix[1,2] = 1; beta.alive.matrix[2,1] = beta.alive[1]
-  beta.alive.matrix[2,3] = beta.alive[2];  beta.alive.matrix[3,2] = beta.alive[3]
-  diag(beta.alive.matrix) = NA
+  alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
+  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  diag(alpha.alive.matrix) = 1
   # Set up death time matrix
-  beta.death.matrix = matrix(Inf,nrow = 4, ncol = 4) 
-  beta.death.matrix[1,4] = 1; beta.death.matrix[2,4] = beta.dead[1]; beta.death.matrix[3,4] = beta.dead[2]
-  diag(beta.death.matrix) = NA
+  alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
+  alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
   
-  rate.alive = nu[1] * zeta(n.vector, beta.alive.matrix, rho) * rho
-  rate.dead  = nu[2] * zeta(n.vector, beta.death.matrix, rho) * rho
+  rate.alive = nu[1] * zeta(n.vector, beta.alive, rho) * rho
+  rate.dead  = nu[2] * zeta(n.vector, beta.dead, rho) * rho
   total.rate =  rate.alive + rate.dead
   if(isdeathtime) {
-    nu = params[2]*rho; beta = beta.death.matrix
+    nu = params[2]*rho; beta = beta.death.matrix; alpha = alpha.death.matrix
   } else {
-    nu = params[1]*rho; beta = beta.alive.matrix
+    nu = params[1]*rho; beta = beta.alive.matrix; alpha = alpha.alive.matrix
   }
   
   return(
-    log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, rho, tol = 0.001))
+    log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, alpha, rho, tol = 0.001))
   )
 }
 
@@ -257,7 +245,8 @@ extract.patient <- function(all.person.obs.data, all.person.trans.data,
   )
 }
 
-extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, current.params, current.multiple = 5, rho = 10) {
+extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
+                                current.params, current.multiple = 5, rho = 10, psi = 1/2) {
   ## Generate the vector of Omega's for each window of time
   ## This changes at each transition time
   other.global.trans.data = convert.to.global(other.person.trans.data)
@@ -265,16 +254,16 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
   other.global.trans.data.shortened = other.global.trans.data[other.global.trans.data$time < max.time, ]
   
   # Alternative just for mapply functionality
-  nu = current.params[1:2]; beta.alive = current.params[3:5]; beta.dead = current.params[6:7]
+  nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
+  alpha.alive = current.params[7]
   # Setup up alive matrix
-  beta.alive.matrix = matrix(Inf, nrow = 3, ncol = 3)
-  beta.alive.matrix[1,2] = 1; beta.alive.matrix[2,1] = beta.alive[1]
-  beta.alive.matrix[2,3] = beta.alive[2];  beta.alive.matrix[3,2] = beta.alive[3]
-  diag(beta.alive.matrix) = NA
+  alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
+  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  diag(alpha.alive.matrix) = 1
   # Set up death time matrix
-  beta.death.matrix = matrix(Inf,nrow = 4, ncol = 4) 
-  beta.death.matrix[1,4] = 1; beta.death.matrix[2,4] = beta.dead[1]; beta.death.matrix[3,4] = beta.dead[2]
-  diag(beta.death.matrix) = NA
+  alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
+  alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
   
   ## Construct rate functions 
   rate.alive.addhealthy = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav+1, 
