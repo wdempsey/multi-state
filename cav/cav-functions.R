@@ -18,7 +18,7 @@ q.split <- function(trans.matrix, beta.vector, alpha.matrix, rho, tol = 0.000001
     temp.row.sum = trans.matrix[i,-i] + alpha.matrix[i,-i]
     temp.total = temp.total + sum(lgamma(temp.row.sum[temp.row.sum>0])) - lgamma(sum(temp.row.sum[temp.row.sum>0]))
   }
-  return(temp.total + temp.integrate)
+  return(exp(temp.total)*temp.integrate)
 }
 
 compute.normalizing <- function(n.vector, beta.vector, rho) {
@@ -64,17 +64,17 @@ lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho, p
   rate.dead  = nu[2] * zeta(n.vector, beta.dead, rho) * rho
   total.rate =  rate.alive + rate.dead
   if(isdeathtime) {
-    nu = params[2]*rho; beta = beta.death.matrix; alpha = alpha.death.matrix
+    nu = params[2]*rho; beta = beta.dead; alpha = alpha.death.matrix
   } else {
-    nu = params[1]*rho; beta = beta.alive.matrix; alpha = alpha.alive.matrix
+    nu = params[1]*rho; beta = beta.alive; alpha = alpha.alive.matrix
   }
   
   return(
-    log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, alpha, rho, tol = 0.001))
+    log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, alpha, rho))
   )
 }
 
-total.llik <- function(data, rho) {
+total.llik <- function(data, rho,psi) {
   subfunction <- function(params) {
     total = 0
     for(t in 2:nrow(data)) {
@@ -98,53 +98,11 @@ total.llik <- function(data, rho) {
         trans.matrix[3,4] = d3
       }
       window.length = data$time[t] - data$time[t-1]
-      total = total + lik.component(params, trans.matrix, isdeathtime, window.length, rho)
+      total = total + lik.component(params, trans.matrix, isdeathtime, window.length, rho, psi)
     }
     return(-total)
   }
   return(subfunction)
-}
-
-construct.person <- function(simdata) {
-  simdata.new = simdata
-  
-  if(all(simdata[1,2:3] > 0)) {
-    init = sample(1:2,size = 1)
-  } else {
-    init = which(simdata[1,2:3] > 0)
-  }
-  
-  persondata = c(simdata$time[1], init)
-  current.state = init; alive = TRUE; row = 1
-  simdata.new[row, 1+current.state] = simdata.new[row, 1+current.state] - 1
-  row = row+1
-  
-  
-  while(alive) {
-    prob = simdata[row, 4+current.state]/simdata[row-1, 1+current.state]
-    did.switch.happen = runif(1) < prob
-    if (did.switch.happen) {
-      ## Record User Data
-      simdata.new[row, 4+current.state] = simdata.new[row, 4+current.state] - 1
-      if(simdata$failure.time[row]) {
-        current.state = 3; alive = FALSE
-      } else{
-        if(current.state == 2) {current.state = 1} else {current.state = 2}
-      }
-      temp = c(simdata$time[row],current.state)
-      persondata = rbind(persondata, temp)
-    } 
-    simdata.new[row,1 + current.state] = simdata.new[row,1 + current.state] - 1
-    row = row + 1
-  }
-  if (row < nrow(simdata.new)) {
-    simdata.new[row:nrow(simdata.new),1 + current.state] = simdata.new[row:nrow(simdata.new),1 + current.state] - 1  
-  }
-  
-  return( list("persondata"=persondata,
-               "simdata"=simdata.new)
-  )
-  
 }
 
 previous.obs <- function(time, user.temp) {
