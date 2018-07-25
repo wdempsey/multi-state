@@ -24,9 +24,7 @@ q.split <- function(trans.matrix, beta.vector, alpha.matrix, rho, tol = 0.000001
 compute.normalizing <- function(n.vector, beta.vector, rho) {
   f2 <- function(x) {
     log.total = (rho-1)* log(x) - log(1-x)
-    for (i in 1:length(n.vector)) {
-      log.total = log.total + n.vector[i] * log(1-x^beta.vector[i])
-    }
+    log.total = log.total + log(1-x^(sum(beta.vector*n.vector)))
     return( exp(log.total) )
   }
   return(f2)
@@ -103,11 +101,6 @@ total.llik <- function(data, rho,psi) {
     return(-total)
   }
   return(subfunction)
-}
-
-previous.obs <- function(time, user.temp) {
-  temp = user.temp$state[user.temp$time <= time]
-  return(temp[length(temp)])
 }
 
 convert.to.global <- function(person.data) {
@@ -224,39 +217,39 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
   alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
   
   ## Construct rate functions 
-  rate.alive.addhealthy = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav+1, 
+  rate.alive.addhealthy = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = other.global.trans.data.shortened$num.nocav+1, 
                                          num.mild = other.global.trans.data.shortened$num.mild,
                                          num.severe = other.global.trans.data.shortened$num.severe) * rho
   
-  rate.dead.addhealthy = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav+1, 
+  rate.dead.addhealthy = nu[2] * mapply(zeta.mapply(beta.dead,rho), num.nocav = other.global.trans.data.shortened$num.nocav+1, 
                                         num.mild = other.global.trans.data.shortened$num.mild,
                                         num.severe = other.global.trans.data.shortened$num.severe) * rho
   
-  rate.alive.baseline = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.alive.baseline = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                        num.mild = other.global.trans.data.shortened$num.mild,
                                        num.severe = other.global.trans.data.shortened$num.severe) * rho
   
-  rate.dead.baseline = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.dead.baseline = nu[2] * mapply(zeta.mapply(beta.dead, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                       num.mild = other.global.trans.data.shortened$num.mild,
                                       num.severe = other.global.trans.data.shortened$num.severe) * rho
   
   total.rate.addhealthy = rate.alive.addhealthy + rate.dead.addhealthy - rate.alive.baseline - rate.dead.baseline
   
-  rate.alive.addmild = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.alive.addmild = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                          num.mild = other.global.trans.data.shortened$num.mild+1,
                                          num.severe = other.global.trans.data.shortened$num.severe) * rho
   
-  rate.dead.addmild = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.dead.addmild = nu[2] * mapply(zeta.mapply(beta.dead, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                         num.mild = other.global.trans.data.shortened$num.mild+1,
                                         num.severe = other.global.trans.data.shortened$num.severe) * rho
   
   total.rate.addmild = rate.alive.addmild + rate.dead.addmild - rate.alive.baseline - rate.dead.baseline
   
-  rate.alive.addsevere = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.alive.addsevere = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                       num.mild = other.global.trans.data.shortened$num.mild,
                                       num.severe = other.global.trans.data.shortened$num.severe+1) * rho
   
-  rate.dead.addsevere = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
+  rate.dead.addsevere = nu[2] * mapply(zeta.mapply(beta.dead, rho), num.nocav = other.global.trans.data.shortened$num.nocav, 
                                      num.mild = other.global.trans.data.shortened$num.mild,
                                      num.severe = other.global.trans.data.shortened$num.severe+1) * rho
   
@@ -272,11 +265,11 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
   all.global.trans.data.shortened = all.global.trans.data[all.global.trans.data$time < max.time, ]
   
   ## Construct rate functions 
-  rate1 = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = all.global.trans.data.shortened$num.nocav, 
+  rate1 = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = all.global.trans.data.shortened$num.nocav, 
                   num.mild = all.global.trans.data.shortened$num.mild,
                   num.severe = all.global.trans.data.shortened$num.severe) * rho
   
-  rate2 = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = all.global.trans.data.shortened$num.nocav, 
+  rate2 = nu[2] * mapply(zeta.mapply(beta.dead, rho), num.nocav = all.global.trans.data.shortened$num.nocav, 
                          num.mild = all.global.trans.data.shortened$num.mild,
                          num.severe = all.global.trans.data.shortened$num.severe) * rho
   
@@ -294,11 +287,11 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
     }
   }
   
-  rate1.At.baseline = nu[1] * mapply(zeta.mapply(beta.alive.matrix, rho), num.nocav = temp.trans.data.shortened$num.nocav, 
+  rate1.At.baseline = nu[1] * mapply(zeta.mapply(beta.alive, rho), num.nocav = temp.trans.data.shortened$num.nocav, 
                                      num.mild = temp.trans.data.shortened$num.mild,
                                      num.severe = temp.trans.data.shortened$num.severe) * rho
   
-  rate2.At.baseline = nu[2] * mapply(zeta.mapply(beta.death.matrix, rho), num.nocav = temp.trans.data.shortened$num.nocav, 
+  rate2.At.baseline = nu[2] * mapply(zeta.mapply(beta.dead, rho), num.nocav = temp.trans.data.shortened$num.nocav, 
                                      num.mild = temp.trans.data.shortened$num.mild,
                                      num.severe = temp.trans.data.shortened$num.severe) * rho
   
@@ -400,7 +393,7 @@ construct.info <- function(new.potential.trans.times, chosen.person.trans.data, 
   return(all.trans.times[!remove.obs,])
 }
 
-filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega, bar.time) {
+filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.Omega, bar.time) {
   ### Alpha is a matrix 3 rows (for each state), with each column summing to 1
   ### Each column corresponds to a potential trans.time
   unique.trans.times = unique(all.trans.times$time)
@@ -411,16 +404,16 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
   L.matrix = matrix(nrow = 4, ncol = length(unique.trans.times))
   
   ## Construct beta.matrices
-  nu = current.params[1:2]; beta.alive = current.params[3:5]; beta.dead = current.params[6:7]
+  nu = params[1:2]; beta.alive = c(1,params[3:4]); beta.dead = c(1,params[5:6]); 
+  alpha.alive = params[7]
   # Setup up alive matrix
-  beta.alive.matrix = matrix(Inf, nrow = 3, ncol = 3)
-  beta.alive.matrix[1,2] = 1; beta.alive.matrix[2,1] = beta.alive[1]
-  beta.alive.matrix[2,3] = beta.alive[2];  beta.alive.matrix[3,2] = beta.alive[3]
-  diag(beta.alive.matrix) = NA
+  alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
+  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  diag(alpha.alive.matrix) = 1
   # Set up death time matrix
-  beta.death.matrix = matrix(Inf,nrow = 4, ncol = 4) 
-  beta.death.matrix[1,4] = 1; beta.death.matrix[2,4] = beta.dead[1]; beta.death.matrix[3,4] = beta.dead[2]
-  diag(beta.death.matrix) = NA
+  alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
+  alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
   
   if(any(current.temp$person.obs.times == TRUE)) {
     L.matrix[,t] = as.numeric(1:4 == current.temp$person.obs.states[current.temp$person.obs.times == TRUE])
@@ -439,7 +432,6 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
     current.time = unique.trans.times[t]; 
     current.temp = all.trans.times[all.trans.times$time == current.time,]
     
-    
     if ( all(current.temp$person.obs.times == FALSE) | 
          (current.time == max(unique.trans.times) & 
           any(current.temp$person.obs.states == 4, na.rm = TRUE) ) 
@@ -455,30 +447,30 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
         current.Omega = bar.Omega[temp.which.Omega]
         n.vector = c(num.nocav, num.mild, num.severe)
         
-        rate.alive.baseline = nu[1] * zeta(n.vector, beta.alive.matrix, rho = rho) * rho
-        rate.death.baseline = nu[2] * zeta(n.vector, beta.death.matrix, rho = rho) * rho
+        rate.alive.baseline = nu[1] * zeta(n.vector, beta.alive, rho = rho) * rho
+        rate.death.baseline = nu[2] * zeta(n.vector, beta.dead, rho = rho) * rho
         
         n.vector.addnocav = n.vector; n.vector.addnocav[1] = n.vector.addnocav[1] + 1
-        rate.alive.addnocav = nu[1] * zeta(n.vector.addnocav, beta.alive.matrix, rho = rho) * rho
-        rate.death.addnocav = nu[2] * zeta(n.vector.addnocav, beta.death.matrix, rho = rho) * rho
+        rate.alive.addnocav = nu[1] * zeta(n.vector.addnocav, beta.alive, rho = rho) * rho
+        rate.death.addnocav = nu[2] * zeta(n.vector.addnocav, beta.dead, rho = rho) * rho
         total.rate.addnocav = rate.alive.addnocav + rate.death.addnocav - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         
         n.vector.addmild = n.vector; n.vector.addmild[2] = n.vector.addmild[2] + 1
-        rate.alive.addmild = nu[1] * zeta(n.vector.addmild, beta.alive.matrix, rho = rho) * rho
-        rate.death.addmild = nu[2] * zeta(n.vector.addmild, beta.death.matrix, rho = rho) * rho
+        rate.alive.addmild = nu[1] * zeta(n.vector.addmild, beta.alive, rho = rho) * rho
+        rate.death.addmild = nu[2] * zeta(n.vector.addmild, beta.dead, rho = rho) * rho
         total.rate.addmild = rate.alive.addmild + rate.death.addmild - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         trans.matrix.mild = matrix(0,nrow = 3, ncol = 3)
         diag(trans.matrix.mild) = n.vector; trans.matrix.mild[2,1] = 1
-        temp.mildtonocav = q.split(trans.matrix.mild, beta.alive.matrix, rho)
+        temp.mildtonocav = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
         trans.matrix.mild[2,1] = 0; trans.matrix.mild[2,3] = 1
-        temp.mildtosevere = q.split(trans.matrix.mild, beta.alive.matrix, rho)
+        temp.mildtosevere = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
         frac.mildtonocav = temp.mildtonocav/ (temp.mildtonocav + temp.mildtosevere)
         
         n.vector.addsevere = n.vector; n.vector.addsevere[3] = n.vector.addsevere[3] + 1
-        rate.alive.addsevere = nu[1] * zeta(n.vector.addsevere, beta.alive.matrix, rho = rho) * rho
-        rate.death.addsevere = nu[2] * zeta(n.vector.addsevere, beta.death.matrix, rho = rho) * rho
+        rate.alive.addsevere = nu[1] * zeta(n.vector.addsevere, beta.alive, rho = rho) * rho
+        rate.death.addsevere = nu[2] * zeta(n.vector.addsevere, beta.dead, rho = rho) * rho
         total.rate.addsevere = rate.alive.addsevere + rate.death.addsevere - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         
@@ -508,28 +500,29 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
         trans.matrix[1,2] = temp.switch1; trans.matrix[2,1] = temp.switch2a; 
         trans.matrix[2,3] = temp.switch2b; trans.matrix[3,2] = temp.switch3
         
-        denominator = q.split(trans.matrix, beta.alive.matrix, rho)
+        denominator = q.split(trans.matrix, beta.alive, alpha.alive.matrix, rho)
         
         current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
         
         trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,1] = trans.matrix.addnocav[1,1] + 1
-        numerator11 = q.split(trans.matrix.addnocav, beta.alive.matrix, rho)
+        numerator11 = q.split(trans.matrix.addnocav, beta.alive, alpha.alive.matrix, rho)
         
         current.B[1,1] = numerator11/denominator; current.B[1,2] = 1 - current.B[1,1]
         
         trans.matrix.addmild.2 = trans.matrix.addmild.2a = trans.matrix.addmild.2b = trans.matrix; 
+        trans.matrix.addmild.2[2,2] = trans.matrix.addmild.2[2,2] + 1
         trans.matrix.addmild.2a[2,1] = trans.matrix.addmild.2a[2,1] + 1
         trans.matrix.addmild.2b[2,3] = trans.matrix.addmild.2b[2,3] + 1
-        numerator22 = q.split(trans.matrix.addmild.2, beta.alive.matrix, rho)
-        temp.input21 = q.split(trans.matrix.addmild.2a, beta.alive.matrix, rho)
-        temp.input23 = q.split(trans.matrix.addmild.2b, beta.alive.matrix, rho)
+        numerator22 = q.split(trans.matrix.addmild.2, beta.alive, alpha.alive.matrix, rho)
+        temp.input21 = q.split(trans.matrix.addmild.2a, beta.alive, alpha.alive.matrix, rho)
+        temp.input23 = q.split(trans.matrix.addmild.2b, beta.alive, alpha.alive.matrix, rho)
         
         current.B[2,1] = temp.input21/denominator
         current.B[2,3] = temp.input23/denominator
         current.B[2,2] = 1-current.B[2,1] - current.B[2,3]
         
         trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,3] = trans.matrix.addsevere[3,3] + 1
-        numerator33 = q.split(trans.matrix.addsevere, beta.alive.matrix, rho)
+        numerator33 = q.split(trans.matrix.addsevere, beta.alive, alpha.alive.matrix, rho)
         
         current.B[3,3] = numerator33/denominator; current.B[3,2] = 1 - current.B[3,3]
         
@@ -549,20 +542,20 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
         diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
         trans.matrix[1,4] = temp.switch1; trans.matrix[2,4] = temp.switch2a; trans.matrix[3,4] = temp.switch3
         
-        denominator = q.split(trans.matrix, beta.death.matrix, rho)
+        denominator = q.split(trans.matrix, beta.dead, alpha.death.matrix, rho)
         
         current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
         
         trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,1] = trans.matrix.addnocav[1,1] + 1
-        numerator11 = q.split(trans.matrix.addnocav, beta.death.matrix, rho)
+        numerator11 = q.split(trans.matrix.addnocav, beta.dead, alpha.death.matrix, rho)
         current.B[1,1] = numerator11/denominator; current.B[1,4] = 1 - current.B[1,1]
         
         trans.matrix.addmild = trans.matrix; trans.matrix.addmild[2,2] = trans.matrix.addnocav[2,2] + 1
-        numerator22 = q.split(trans.matrix.addmild, beta.death.matrix, rho)
+        numerator22 = q.split(trans.matrix.addmild, beta.dead, alpha.death.matrix, rho)
         current.B[2,2] = numerator22/denominator; current.B[2,4] = 1 - current.B[2,2]
         
         trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,3] = trans.matrix.addsevere[3,3] + 1
-        numerator33 = q.split(trans.matrix.addsevere, beta.death.matrix, rho)
+        numerator33 = q.split(trans.matrix.addsevere, beta.dead, alpha.death.matrix, rho)
         current.B[3,3] = numerator33/denominator; current.B[3,4] = 1 - current.B[3,3]
         
         list.of.current.Bs[[t-1]] = current.B
@@ -575,30 +568,30 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
         current.Omega = bar.Omega[temp.which.Omega]
         n.vector = c(num.nocav, num.mild, num.severe)
         
-        rate.alive.baseline = nu[1] * zeta(n.vector, beta.alive.matrix, rho = rho) * rho
-        rate.death.baseline = nu[2] * zeta(n.vector, beta.death.matrix, rho = rho) * rho
+        rate.alive.baseline = nu[1] * zeta(n.vector, beta.alive, rho = rho) * rho
+        rate.death.baseline = nu[2] * zeta(n.vector, beta.dead, rho = rho) * rho
         
         n.vector.addnocav = n.vector; n.vector.addnocav[1] = n.vector.addnocav[1] + 1
-        rate.alive.addnocav = nu[1] * zeta(n.vector.addnocav, beta.alive.matrix, rho = rho) * rho
-        rate.death.addnocav = nu[2] * zeta(n.vector.addnocav, beta.death.matrix, rho = rho) * rho
+        rate.alive.addnocav = nu[1] * zeta(n.vector.addnocav, beta.alive, rho = rho) * rho
+        rate.death.addnocav = nu[2] * zeta(n.vector.addnocav, beta.dead, rho = rho) * rho
         total.rate.addnocav = rate.alive.addnocav + rate.death.addnocav - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         
         n.vector.addmild = n.vector; n.vector.addmild[2] = n.vector.addmild[2] + 1
-        rate.alive.addmild = nu[1] * zeta(n.vector.addmild, beta.alive.matrix, rho = rho) * rho
-        rate.death.addmild = nu[2] * zeta(n.vector.addmild, beta.death.matrix, rho = rho) * rho
+        rate.alive.addmild = nu[1] * zeta(n.vector.addmild, beta.alive, rho = rho) * rho
+        rate.death.addmild = nu[2] * zeta(n.vector.addmild, beta.dead, rho = rho) * rho
         total.rate.addmild = rate.alive.addmild + rate.death.addmild - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         trans.matrix.mild = matrix(0,nrow = 3, ncol = 3)
         diag(trans.matrix.mild) = n.vector; trans.matrix.mild[2,1] = 1
-        temp.mildtonocav = q.split(trans.matrix.mild, beta.alive.matrix, rho)
+        temp.mildtonocav = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
         trans.matrix.mild[2,1] = 0; trans.matrix.mild[2,3] = 1
-        temp.mildtosevere = q.split(trans.matrix.mild, beta.alive.matrix, rho)
+        temp.mildtosevere = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
         frac.mildtonocav = temp.mildtonocav/ (temp.mildtonocav + temp.mildtosevere)
         
         n.vector.addsevere = n.vector; n.vector.addsevere[3] = n.vector.addsevere[3] + 1
-        rate.alive.addsevere = nu[1] * zeta(n.vector.addsevere, beta.alive.matrix, rho = rho) * rho
-        rate.death.addsevere = nu[2] * zeta(n.vector.addsevere, beta.death.matrix, rho = rho) * rho
+        rate.alive.addsevere = nu[1] * zeta(n.vector.addsevere, beta.alive, rho = rho) * rho
+        rate.death.addsevere = nu[2] * zeta(n.vector.addsevere, beta.dead, rho = rho) * rho
         total.rate.addsevere = rate.alive.addsevere + rate.death.addsevere - (rate.alive.baseline + rate.death.baseline)
         # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
         
@@ -743,7 +736,7 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
 
 sample.one.new.user <- function(patient.id, all.users, all.person.obs.data, 
                                 all.person.trans.data, current.params, 
-                                current.multiple, rho, initial.iter = FALSE) {
+                                current.multiple, rho, psi, initial.iter = FALSE) {
   # print(patient.id)
   temp.extract = extract.patient(all.person.obs.data, all.person.trans.data, patient.id)
   chosen.person.obs.data = temp.extract$chosen.person.obs.data
@@ -752,7 +745,7 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
   max.time = max(chosen.person.obs.data$time)
   
   temp.extractOmega.and.A = extract.Omega.and.A(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
-                                    current.params, current.multiple = current.multiple , rho) 
+                                    current.params, current.multiple = current.multiple , rho, psi) 
   
   temp.new.potential.trans.times = generate.points(temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time, 
                                                    temp.extractOmega.and.A$bar.A, temp.extractOmega.and.A$bar.Omega.time,
@@ -761,7 +754,8 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
   temp.constructinfo = construct.info(temp.new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, 
                                       chosen.person.obs.data, current.params)
   
-  temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
+  # NEED TO DEAL WITH CAN'T TRANS TO 4 PRIOR TO FAILURE TIME
+  temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, psi, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
   
   all.person.trans.data <- build.new.all.person.trans.data(temp.newsample, patient.id, other.person.trans.data) 
   
