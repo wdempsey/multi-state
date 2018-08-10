@@ -40,12 +40,13 @@ iter = 1; max.iter = 1000; smooth.to.iter = 100
 init.multiple = 5; final.multiple = 2
 current.params = params
 prior.params = data.frame(alpha = 1, beta = 1, log.mu = 0, log.sd = 1, 
-                          step.size = 0.1, alpha.step.size = 10)
+                          step.size = 0.1, alpha.step.size = 0.2)
 all.users = unique(all.person.obs.data$user)
 posterior.results = matrix(nrow = length(current.params), ncol = max.iter)
 acceptance.rate.results = vector(length = max.iter)
 person.global.data.list = list()
 set.seed("1283714")
+save.every.num.iters = 50 
 
 for (iter in 1:max.iter) {
   current.multiple = max(final.multiple, init.multiple + (final.multiple - init.multiple) / (smooth.to.iter-1) * (iter-1))
@@ -66,9 +67,12 @@ for (iter in 1:max.iter) {
   current.params = new.beta.params$new.params
   all.person.trans.data = new.all.person.trans.data
   person.global.data.list[[iter]] = new.all.person.global.data
+  
+  if ((iter %% save.every.num.iters) == 0) {
+    saveRDS(posterior.results, file = "posterior-params-results.RDS")
+    saveRDS(person.global.data.list, file = "posterior-transdata-results.RDS")
+    saveRDS(acceptance.rate.results, file = "acceptance-results.RDS")
+  }
 }
 
-saveRDS(posterior.results, file = "posterior-params-results.RDS")
-saveRDS(person.global.data.list, file = "posterior-transdata-results.RDS")
-saveRDS(acceptance.rate.results, file = "acceptance-results.RDS")
 

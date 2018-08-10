@@ -685,7 +685,7 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
   if (initial.iter) { 
     keep.users = c(); new.all.person.trans.data = c()
     for(patient.id in all.users) {
-      print(patient.id)
+      # print(patient.id)
       keep.users = c(patient.id, keep.users)
       new.all.person.trans.data = rbind(new.all.person.trans.data, old.all.person.trans.data[is.element(old.all.person.trans.data$user,patient.id),])
       new.all.person.obs.data = all.person.obs.data[is.element(all.person.obs.data$user,keep.users),]
@@ -823,8 +823,10 @@ nu.gibbs.updates <- function(data, current.params, rho, psi, prior.params) {
 beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, psi, prior.params) {
   temp.params = c(new.nu.params, current.params[3:length(current.params)])
   proposal.beta.params = log(temp.params[3:6]) + rnorm(4, sd = prior.params$step.size)
-  proposal.alpha.params = rbeta(1, shape1 = temp.params[7] * prior.params$alpha.step.size, 
-                                shape2 = (1 - temp.params[7]) * prior.params$alpha.step.size)
+  logit.proposal.alpha.params = log(temp.params[7] /  (1-temp.params[7])) + rnorm(1, sd = prior.params$alpha.step.size)
+  proposal.alpha.params = exp(logit.proposal.alpha.params) / (1+exp(logit.proposal.alpha.params))
+  # proposal.alpha.params = rbeta(1, shape1 = temp.params[7] * prior.params$alpha.step.size, 
+  #                               shape2 = (1 - temp.params[7]) * prior.params$alpha.step.size)
   proposal.params = c(temp.params[1:2], exp(proposal.beta.params), proposal.alpha.params)
   current.llik = total.llik(data, rho, psi)(temp.params)
   # current.prior.llik = -sum(log(dcauchy(proposal.beta.params, location = prior.params$log.mu, scale = prior.params$log.sd)))
