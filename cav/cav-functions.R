@@ -504,10 +504,10 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
         
         current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
         
-        trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,1] = trans.matrix.addnocav[1,1] + 1
-        numerator11 = q.split(trans.matrix.addnocav, beta.alive, alpha.alive.matrix, rho)
+        trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,2] = trans.matrix.addnocav[1,2] + 1
+        numerator12 = q.split(trans.matrix.addnocav, beta.alive, alpha.alive.matrix, rho)
         
-        current.B[1,1] = numerator11/denominator; current.B[1,2] = 1 - current.B[1,1]
+        current.B[1,2] = numerator12/denominator; current.B[1,1] = 1 - current.B[1,2]
         
         trans.matrix.addmild.2 = trans.matrix.addmild.2a = trans.matrix.addmild.2b = trans.matrix; 
         trans.matrix.addmild.2[2,2] = trans.matrix.addmild.2[2,2] + 1
@@ -521,10 +521,10 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
         current.B[2,3] = temp.input23/denominator
         current.B[2,2] = 1-current.B[2,1] - current.B[2,3]
         
-        trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,3] = trans.matrix.addsevere[3,3] + 1
-        numerator33 = q.split(trans.matrix.addsevere, beta.alive, alpha.alive.matrix, rho)
+        trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,2] = trans.matrix.addsevere[3,2] + 1
+        numerator32 = q.split(trans.matrix.addsevere, beta.alive, alpha.alive.matrix, rho)
         
-        current.B[3,3] = numerator33/denominator; current.B[3,2] = 1 - current.B[3,3]
+        current.B[3,2] = numerator32/denominator; current.B[3,3] = 1 - current.B[3,2]
         
         list.of.current.Bs[[t-1]] = current.B
       } else if ( all(current.temp$person.obs.times == FALSE) &
@@ -546,17 +546,17 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
         
         current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
         
-        trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,1] = trans.matrix.addnocav[1,1] + 1
-        numerator11 = q.split(trans.matrix.addnocav, beta.dead, alpha.death.matrix, rho)
-        current.B[1,1] = numerator11/denominator; current.B[1,4] = 1 - current.B[1,1]
+        trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,4] = trans.matrix.addnocav[1,4] + 1
+        numerator14 = q.split(trans.matrix.addnocav, beta.dead, alpha.death.matrix, rho)
+        current.B[1,4] = numerator14/denominator; current.B[1,1] = 1 - current.B[1,4]
         
-        trans.matrix.addmild = trans.matrix; trans.matrix.addmild[2,2] = trans.matrix.addnocav[2,2] + 1
-        numerator22 = q.split(trans.matrix.addmild, beta.dead, alpha.death.matrix, rho)
-        current.B[2,2] = numerator22/denominator; current.B[2,4] = 1 - current.B[2,2]
+        trans.matrix.addmild = trans.matrix; trans.matrix.addmild[2,4] = trans.matrix.addnocav[2,4] + 1
+        numerator24 = q.split(trans.matrix.addmild, beta.dead, alpha.death.matrix, rho)
+        current.B[2,4] = numerator24/denominator; current.B[2,2] = 1 - current.B[2,4]
         
-        trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,3] = trans.matrix.addsevere[3,3] + 1
-        numerator33 = q.split(trans.matrix.addsevere, beta.dead, alpha.death.matrix, rho)
-        current.B[3,3] = numerator33/denominator; current.B[3,4] = 1 - current.B[3,3]
+        trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,4] = trans.matrix.addsevere[3,4] + 1
+        numerator34 = q.split(trans.matrix.addsevere, beta.dead, alpha.death.matrix, rho)
+        current.B[3,4] = numerator34/denominator; current.B[3,3] = 1 - current.B[3,4]
         
         list.of.current.Bs[[t-1]] = current.B
       } else {
@@ -624,6 +624,7 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
       num.severe = current.temp$num.severe[!is.na(current.temp$num.severe)]
       num.dead = current.temp$num.dead[!is.na(current.temp$num.dead)]
     }
+    if(any(current.B <0)) {print(t)}
   }
   
   ## And now we backwards sample
@@ -636,7 +637,11 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
       B.t = list.of.current.Bs[[t]]
       Beta.matrix[,t] = Alpha.matrix[,t] * L.matrix[,t] * B.t[,sampled.trajectory[t+1]]
       Beta.matrix[,t] = Beta.matrix[,t]/ sum(Beta.matrix[,t])
-      sampled.trajectory[t] = sample(1:4, prob = Beta.matrix[,t], size = 1)
+      if(t == T-1 & sampled.trajectory[T] == 4) {
+        sampled.trajectory[t] = sample(1:3, prob = Beta.matrix[1:3,t], size = 1)
+      } else {
+        sampled.trajectory[t] = sample(1:4, prob = Beta.matrix[,t], size = 1)
+      }
       # if(sampled.trajectory[t] != sampled.trajectory[t+1]) {
       #   print( paste("Switch from state",sampled.trajectory[t+1], "to", sampled.trajectory[t], "at time", 
       #                unique.trans.times[t+1], "which is t =", t))
@@ -684,12 +689,12 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
       keep.users = c(patient.id, keep.users)
       new.all.person.trans.data = rbind(new.all.person.trans.data, old.all.person.trans.data[is.element(old.all.person.trans.data$user,patient.id),])
       new.all.person.obs.data = all.person.obs.data[is.element(all.person.obs.data$user,keep.users),]
-      complete = FALSE; how.many.to.completion = 0; attempt = 1
+      complete = FALSE; how.many.to.completion = 0; attempt = 1; temp.multiple = current.multiple
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
         temp = try(sample.one.new.user(patient.id, keep.users, new.all.person.obs.data, 
                                        new.all.person.trans.data, current.params, 
-                                       current.multiple, rho, initial.iter), TRUE)
+                                       temp.multiple, rho, psi, initial.iter), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -697,8 +702,10 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
           if (attempt == max.attempts) {
             complete = TRUE  
             print("Hit max attempts, so moving on.")
+            break
           } else {
             attempt = attempt + 1
+            temp.multiple = 2*temp.multiple
             print("In a fail-safe loop, hold on one moment please. Thanks for your patience.")
           }
         }
@@ -711,11 +718,12 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
     for(patient.id in all.users) {
       print(patient.id)
       complete = FALSE; how.many.to.completion = 0
-      max.attempts = 10; attempt = 1
+      max.attempts = 10; attempt = 1; temp.multiple = current.multiple
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
         temp = try(sample.one.new.user(patient.id, all.users, new.all.person.obs.data, 
-                                       new.all.person.trans.data, current.params, current.multiple, rho), TRUE)
+                                       new.all.person.trans.data, current.params, 
+                                       temp.multiple, rho, psi), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -725,6 +733,7 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
             print("Hit max attempts, so moving on.")
           } else {
             attempt = attempt + 1
+            temp.multiple = 2*temp.multiple
             print("In a fail-safe loop, hold on one moment please. Thanks for your patience.")
           }
         }
@@ -762,16 +771,44 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
   return(all.person.trans.data)
 }
 
-nu.gibbs.updates <- function(data, current.params, rho, prior.params) {
+nu.gibbs.updates <- function(data, current.params, rho, psi, prior.params) {
   total.zeta.integral = c(0,0); switch.count = c(0,0)
   for(t in 2:nrow(data)) {
     isdeathtime = data$failure.time[t]
-    n1 = data$num.healthy[t-1]; n2 = data$num.ill[t-1]
-    d1 = data$switch1[t]; d2 = data$switch2[t]
+    num.nocav = data$num.nocav[t-1]; num.mild = data$num.mild[t-1]
+    num.severe = data$num.severe[t-1]
+    n.vector = c(num.nocav, num.mild, num.severe)
+    d1 = data$switch1[t]; d2a = data$switch2a[t]
+    d2b = data$switch2b[t]; d3 = data$switch3[t]
+    r.nocav = num.nocav - d1; r.mild = num.mild - d2a - d2b;
+    r.severe = num.severe - d3;
+    if(r.mild < 0) {r.mild = 0}
+    if(!isdeathtime) {
+      trans.matrix = matrix(0, nrow = 3, ncol = 3)
+      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
+      trans.matrix[1,2] = d1; trans.matrix[2,1] = d2a; 
+      trans.matrix[2,3] = d2b; trans.matrix[3,2] = d3
+    } else {
+      trans.matrix = matrix(0, nrow = 3, ncol = 4)
+      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
+      trans.matrix[1,4] = d1; trans.matrix[2,4] = d2a; 
+      trans.matrix[3,4] = d3
+    }
     window.length = data$time[t] - data$time[t-1]
-    rate1 = zeta(n1, n2, current.params[3], rho) * rho
-    rate2 = zeta(n1, n2, current.params[4], rho) * rho
-    current.rates = c(rate1, rate2)
+    nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
+    alpha.alive = current.params[7]
+    # Setup up alive matrix
+    alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
+    alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
+    alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+    diag(alpha.alive.matrix) = 1
+    # Set up death time matrix
+    alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
+    alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
+    
+    rate.alive = nu[1] * zeta(n.vector, beta.alive, rho) * rho
+    rate.dead  = nu[2] * zeta(n.vector, beta.dead, rho) * rho
+    current.rates = c(rate.alive, rate.dead)
     switch.count = switch.count + as.numeric(0:1 == isdeathtime)
     total.zeta.integral = total.zeta.integral + current.rates * window.length
   }
@@ -783,16 +820,18 @@ nu.gibbs.updates <- function(data, current.params, rho, prior.params) {
   ) )
 }
 
-beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, prior.params) {
-  temp.params = c(new.nu.params, current.params[3:4])
-  proposal.beta.params = log(temp.params[3:4]) + rnorm(2, sd = prior.params$step.size)
-  proposal.params = c(temp.params[1:2], exp(proposal.beta.params))
-  current.llik = total.llik(data, rho)(temp.params)
+beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, psi, prior.params) {
+  temp.params = c(new.nu.params, current.params[3:length(current.params)])
+  proposal.beta.params = log(temp.params[3:6]) + rnorm(4, sd = prior.params$step.size)
+  proposal.alpha.params = rbeta(1, shape1 = temp.params[7] * prior.params$alpha.step.size, 
+                                shape2 = (1 - temp.params[7]) * prior.params$alpha.step.size)
+  proposal.params = c(temp.params[1:2], exp(proposal.beta.params), proposal.alpha.params)
+  current.llik = total.llik(data, rho, psi)(temp.params)
   # current.prior.llik = -sum(log(dcauchy(proposal.beta.params, location = prior.params$log.mu, scale = prior.params$log.sd)))
   # proposal.prior.llik = -sum(log(dcauchy(log(temp.params[3:4]), location = prior.params$log.mu, scale = prior.params$log.sd)))
   current.prior.llik = -sum(log(dnorm(proposal.beta.params, mean = prior.params$log.mu, sd = prior.params$log.sd)))
   proposal.prior.llik = -sum(log(dnorm(log(temp.params[3:4]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.llik = total.llik(data, rho)(proposal.params)
+  proposal.llik = total.llik(data, rho, psi)(proposal.params)
   acceptance.rate = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
   accept.proposal = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate) ==1)
   new.beta.params = accept.proposal * proposal.params + (1-accept.proposal) * temp.params
