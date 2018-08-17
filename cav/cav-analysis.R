@@ -26,7 +26,7 @@ all.person.trans.data = all.person.obs.data = person.data
 ## Initialize using trans.data (i.e., under LOCF assumption)
 ## Gives biased but OK starting values
 nu.11 = nu.12 = 0.2; beta.21 = beta.22 = beta.31 = beta.32 = 1
-p.21 = 1/2; psi = 1/2
+p.21 = 0.1
 params = c(nu.11, nu.12, beta.21, beta.22, beta.31, beta.32, p.21)
 
 bad.obs = rowSums(all.global.trans.data[,6:9]) == 0
@@ -40,7 +40,7 @@ iter = 1; max.iter = 1000; smooth.to.iter = 100
 init.multiple = 5; final.multiple = 2
 current.params = params
 prior.params = data.frame(alpha = 1, beta = 1, log.mu = 0, log.sd = 1, 
-                          step.size = 0.1, alpha.step.size = 0.2)
+                          step.size = 0.3, alpha.alive = 0.05*100, beta.alive = 0.95*100)
 all.users = unique(all.person.obs.data$user)
 posterior.results = matrix(nrow = length(current.params), ncol = max.iter)
 acceptance.rate.results = vector(length = max.iter)
@@ -57,9 +57,10 @@ for (iter in 1:max.iter) {
                                                    current.params, current.multiple, rho, 
                                                    initial.iter = is.it.initial.iter) 
   new.all.person.global.data = convert.to.global(new.all.person.trans.data)
-  new.nu.params = nu.gibbs.updates(new.all.person.global.data, current.params, rho, psi, prior.params)
+  new.nu.params = nu.gibbs.updates(new.all.person.global.data, current.params, rho, prior.params) # also updates.alive.alive P
+  new.alpha.alive = alpha.alive.gibbs.updates(new.all.person.global.data, prior.params)
   new.beta.params = beta.gibbs.updates(new.all.person.global.data, new.nu.params, 
-                                       current.params, rho, psi, prior.params)
+                                       new.alpha.alive, current.params, rho, prior.params)
   print(paste("For iteration = ", iter,". We have parameters", sep = ""))
   print(new.beta.params$new.params)
   posterior.results[,iter] = new.beta.params$new.params

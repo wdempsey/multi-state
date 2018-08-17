@@ -13,12 +13,12 @@ compute.pdf <- function(trans.matrix,beta.vector, rho) {
 q.split <- function(trans.matrix, beta.vector, alpha.matrix, rho, tol = 0.000001) {
   temp = compute.pdf(trans.matrix,beta.vector, rho)
   temp.integrate = integrate(temp,0.00,tol)$value + integrate(temp,tol,1)$value
-  temp.total = 0
+  log.temp.total = 0
   for (i in 1:nrow(trans.matrix)) {
-    temp.row.sum = trans.matrix[i,-i] + alpha.matrix[i,-i]
-    temp.total = temp.total + sum(lgamma(temp.row.sum[temp.row.sum>0])) - lgamma(sum(temp.row.sum[temp.row.sum>0]))
+    log.multi.coef = lfactorial(sum(trans.matrix[i,-i])) - sum(lfactorial(trans.matrix[i,-i]))  
+    log.temp.total = log.temp.total + log.multi.coef + sum(trans.matrix[i,-i] * log(alpha.matrix[i,-i]), na.rm = TRUE)
   }
-  return(exp(temp.total)*temp.integrate)
+  return(exp(log.temp.total)*temp.integrate)
 }
 
 compute.normalizing <- function(n.vector, beta.vector, rho) {
@@ -44,15 +44,15 @@ zeta.mapply <- function(beta.vector, rho) {
   return(interior.zeta)
 }
 
-lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho, psi) {
+lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho) {
   n.vector = rowSums(trans.matrix)
   # Alternative just for mapply functionality
   nu = params[1:2]; beta.alive = c(1,params[3:4]); beta.dead = c(1,params[5:6]); 
   alpha.alive = params[7]
   # Setup up alive matrix
   alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
-  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
-  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive
+  alpha.alive.matrix[2,3] = (1-alpha.alive); alpha.alive.matrix[3,2] = 1
   diag(alpha.alive.matrix) = 1
   # Set up death time matrix
   alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
@@ -72,7 +72,7 @@ lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho, p
   )
 }
 
-total.llik <- function(data, rho,psi) {
+total.llik <- function(data, rho) {
   subfunction <- function(params) {
     total = 0
     for(t in 2:nrow(data)) {
@@ -96,7 +96,7 @@ total.llik <- function(data, rho,psi) {
         trans.matrix[3,4] = d3
       }
       window.length = data$time[t] - data$time[t-1]
-      total = total + lik.component(params, trans.matrix, isdeathtime, window.length, rho, psi)
+      total = total + lik.component(params, trans.matrix, isdeathtime, window.length, rho)
     }
     return(-total)
   }
@@ -197,7 +197,7 @@ extract.patient <- function(all.person.obs.data, all.person.trans.data,
 }
 
 extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
-                                current.params, current.multiple = 5, rho = 10, psi = 1/2) {
+                                current.params, current.multiple = 5, rho = 10) {
   ## Generate the vector of Omega's for each window of time
   ## This changes at each transition time
   other.global.trans.data = convert.to.global(other.person.trans.data)
@@ -209,8 +209,8 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
   alpha.alive = current.params[7]
   # Setup up alive matrix
   alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
-  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
-  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive
+  alpha.alive.matrix[2,3] = (1-alpha.alive); alpha.alive.matrix[3,2] = 1
   diag(alpha.alive.matrix) = 1
   # Set up death time matrix
   alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
@@ -393,7 +393,7 @@ construct.info <- function(new.potential.trans.times, chosen.person.trans.data, 
   return(all.trans.times[!remove.obs,])
 }
 
-filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.Omega, bar.time) {
+filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega, bar.time) {
   ### Alpha is a matrix 3 rows (for each state), with each column summing to 1
   ### Each column corresponds to a potential trans.time
   unique.trans.times = unique(all.trans.times$time)
@@ -408,8 +408,8 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, psi, bar.O
   alpha.alive = params[7]
   # Setup up alive matrix
   alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
-  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
-  alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive
+  alpha.alive.matrix[2,3] = 1-alpha.alive; alpha.alive.matrix[3,2] = 1
   diag(alpha.alive.matrix) = 1
   # Set up death time matrix
   alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
@@ -694,7 +694,7 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
         how.many.to.completion = how.many.to.completion + 1
         temp = try(sample.one.new.user(patient.id, keep.users, new.all.person.obs.data, 
                                        new.all.person.trans.data, current.params, 
-                                       temp.multiple, rho, psi, initial.iter), TRUE)
+                                       temp.multiple, rho, initial.iter), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -716,14 +716,14 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
     new.all.person.trans.data = old.all.person.trans.data
     new.all.person.obs.data = all.person.obs.data
     for(patient.id in all.users) {
-      print(patient.id)
+      # print(patient.id)
       complete = FALSE; how.many.to.completion = 0
       max.attempts = 10; attempt = 1; temp.multiple = current.multiple
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
         temp = try(sample.one.new.user(patient.id, all.users, new.all.person.obs.data, 
                                        new.all.person.trans.data, current.params, 
-                                       temp.multiple, rho, psi), TRUE)
+                                       temp.multiple, rho), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -745,7 +745,7 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
 
 sample.one.new.user <- function(patient.id, all.users, all.person.obs.data, 
                                 all.person.trans.data, current.params, 
-                                current.multiple, rho, psi, initial.iter = FALSE) {
+                                current.multiple, rho, initial.iter = FALSE) {
   # print(patient.id)
   temp.extract = extract.patient(all.person.obs.data, all.person.trans.data, patient.id)
   chosen.person.obs.data = temp.extract$chosen.person.obs.data
@@ -754,7 +754,7 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
   max.time = max(chosen.person.obs.data$time)
   
   temp.extractOmega.and.A = extract.Omega.and.A(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
-                                    current.params, current.multiple = current.multiple , rho, psi) 
+                                    current.params, current.multiple = current.multiple , rho) 
   
   temp.new.potential.trans.times = generate.points(temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time, 
                                                    temp.extractOmega.and.A$bar.A, temp.extractOmega.and.A$bar.Omega.time,
@@ -764,50 +764,24 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
                                       chosen.person.obs.data, current.params)
   
   # NEED TO DEAL WITH CAN'T TRANS TO 4 PRIOR TO FAILURE TIME
-  temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, psi, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
+  temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
   
   all.person.trans.data <- build.new.all.person.trans.data(temp.newsample, patient.id, other.person.trans.data) 
   
   return(all.person.trans.data)
 }
 
-nu.gibbs.updates <- function(data, current.params, rho, psi, prior.params) {
+nu.gibbs.updates <- function(data, current.params, rho, prior.params) {
   total.zeta.integral = c(0,0); switch.count = c(0,0)
+  nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
   for(t in 2:nrow(data)) {
     isdeathtime = data$failure.time[t]
     num.nocav = data$num.nocav[t-1]; num.mild = data$num.mild[t-1]
     num.severe = data$num.severe[t-1]
     n.vector = c(num.nocav, num.mild, num.severe)
-    d1 = data$switch1[t]; d2a = data$switch2a[t]
-    d2b = data$switch2b[t]; d3 = data$switch3[t]
-    r.nocav = num.nocav - d1; r.mild = num.mild - d2a - d2b;
-    r.severe = num.severe - d3;
-    if(r.mild < 0) {r.mild = 0}
-    if(!isdeathtime) {
-      trans.matrix = matrix(0, nrow = 3, ncol = 3)
-      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
-      trans.matrix[1,2] = d1; trans.matrix[2,1] = d2a; 
-      trans.matrix[2,3] = d2b; trans.matrix[3,2] = d3
-    } else {
-      trans.matrix = matrix(0, nrow = 3, ncol = 4)
-      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
-      trans.matrix[1,4] = d1; trans.matrix[2,4] = d2a; 
-      trans.matrix[3,4] = d3
-    }
     window.length = data$time[t] - data$time[t-1]
-    nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
-    alpha.alive = current.params[7]
-    # Setup up alive matrix
-    alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
-    alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive/psi
-    alpha.alive.matrix[2,3] = (1-alpha.alive)/psi; alpha.alive.matrix[3,2] = 1
-    diag(alpha.alive.matrix) = 1
-    # Set up death time matrix
-    alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
-    alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
-    
-    rate.alive = nu[1] * zeta(n.vector, beta.alive, rho) * rho
-    rate.dead  = nu[2] * zeta(n.vector, beta.dead, rho) * rho
+    rate.alive = zeta(n.vector, beta.alive, rho) * rho
+    rate.dead  = zeta(n.vector, beta.dead, rho) * rho
     current.rates = c(rate.alive, rate.dead)
     switch.count = switch.count + as.numeric(0:1 == isdeathtime)
     total.zeta.integral = total.zeta.integral + current.rates * window.length
@@ -820,20 +794,18 @@ nu.gibbs.updates <- function(data, current.params, rho, psi, prior.params) {
   ) )
 }
 
-beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, psi, prior.params) {
-  temp.params = c(new.nu.params, current.params[3:length(current.params)])
+beta.gibbs.updates <- function(data, new.nu.params, new.alpha.alive, current.params, rho, prior.params) {
+  temp.params = c(new.nu.params, current.params[3:(length(current.params)-1)], new.alpha.alive)
   proposal.beta.params = log(temp.params[3:6]) + rnorm(4, sd = prior.params$step.size)
-  logit.proposal.alpha.params = log(temp.params[7] /  (1-temp.params[7])) + rnorm(1, sd = prior.params$alpha.step.size)
-  proposal.alpha.params = exp(logit.proposal.alpha.params) / (1+exp(logit.proposal.alpha.params))
   # proposal.alpha.params = rbeta(1, shape1 = temp.params[7] * prior.params$alpha.step.size, 
   #                               shape2 = (1 - temp.params[7]) * prior.params$alpha.step.size)
-  proposal.params = c(temp.params[1:2], exp(proposal.beta.params), proposal.alpha.params)
-  current.llik = total.llik(data, rho, psi)(temp.params)
+  proposal.params = c(temp.params[1:2], exp(proposal.beta.params), temp.params[7])
+  current.llik = total.llik(data, rho)(temp.params)
   # current.prior.llik = -sum(log(dcauchy(proposal.beta.params, location = prior.params$log.mu, scale = prior.params$log.sd)))
   # proposal.prior.llik = -sum(log(dcauchy(log(temp.params[3:4]), location = prior.params$log.mu, scale = prior.params$log.sd)))
   current.prior.llik = -sum(log(dnorm(proposal.beta.params, mean = prior.params$log.mu, sd = prior.params$log.sd)))
   proposal.prior.llik = -sum(log(dnorm(log(temp.params[3:4]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.llik = total.llik(data, rho, psi)(proposal.params)
+  proposal.llik = total.llik(data, rho)(proposal.params)
   acceptance.rate = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
   accept.proposal = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate) ==1)
   new.beta.params = accept.proposal * proposal.params + (1-accept.proposal) * temp.params
@@ -842,39 +814,84 @@ beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, psi, pr
   )
 }
 
-Survival.fit <- function(current.global, current.params, grid.length = 0.01) {
+
+alpha.alive.gibbs.updates <- function(data, prior.params) {
+  new.alpha.alive = sum(data$switch2a[data$failure.time!=1]) + prior.params$alpha.alive
+  new.beta.alive = sum(data$switch2b[data$failure.time!=1]) + prior.params$beta.alive
+  return( 
+    rbeta(1, shape1  = new.alpha.alive, shape2 = new.beta.alive)
+  )
+}
+
+Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01) {
   
   unique.trans.times = unique(current.global$time)
-  Survival.inithealthy = c(1, 0, 0); Survival.initill = c(0, 1, 0)
-  computed.at.times = c(0) 
-  Survival.inithealthy.matrix = as.matrix(Survival.inithealthy, ncol = 1)
-  Survival.initill.matrix = as.matrix(Survival.initill, ncol = 1)
+  Survival.init.nocav = c(1, 0, 0, 0); computed.at.times = c(0) 
+  Survival.initnocav.matrix = as.matrix(Survival.init.nocav, ncol = 1)
   
+  Survival.init.mild = c(0, 1, 0, 0); computed.at.times = c(0) 
+  Survival.initmild.matrix = as.matrix(Survival.init.mild, ncol = 1)
   
+  nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
+  alpha.alive = current.params[7]
+  # Setup up alive matrix
+  alpha.alive.matrix = matrix(0, nrow = 3, ncol = 3)
+  alpha.alive.matrix[1,2] = 1; alpha.alive.matrix[2,1] = alpha.alive
+  alpha.alive.matrix[2,3] = 1-alpha.alive; alpha.alive.matrix[3,2] = 1
+  diag(alpha.alive.matrix) = 1
+  # Set up death time matrix
+  alpha.death.matrix = matrix(0,nrow = 3, ncol = 4) 
+  alpha.death.matrix[1:3,4] = 1; diag(alpha.death.matrix) = 1
   
   for (t in 2:length(unique.trans.times)) {
     
-    n1 = current.global$num.healthy[t-1]; n2 = current.global$num.ill[t-1]
-    rate1.baseline = current.params[1] * zeta(n1, n2, beta = current.params[3], rho = rho) * rho
-    rate2.baseline = current.params[2] * zeta(n1, n2, beta = current.params[4], rho = rho) * rho
+    num.nocav = current.global$num.nocav[t-1]; num.mild = current.global$num.mild[t-1]; num.severe = current.global$num.severe[t-1]
+    n.vector = c(num.nocav, num.mild, num.severe)
     
-    rate1.addhealthy = current.params[1] * zeta(n1+1, n2, beta = current.params[3], rho = rho) * rho
-    rate2.addhealthy = current.params[2] * zeta(n1+1, n2, beta = current.params[4], rho = rho) * rho
-    total.rate.addhealthy = rate1.addhealthy + rate2.addhealthy - (rate1.baseline + rate2.baseline)
-    current.Q = matrix(nrow = 3, ncol = 3)
-    current.Q[1,1] = - total.rate.addhealthy
-    current.Q[1,2] = (rate1.addhealthy - rate1.baseline) 
-    current.Q[1,3] = (rate2.addhealthy - rate2.baseline)
+    rate.alive.baseline = nu[1] * zeta(n.vector, beta.alive, rho) * rho
+    rate.death.baseline  = nu[2] * zeta(n.vector, beta.dead, rho) * rho
     
-    rate1.addill = current.params[1] * zeta(n1, n2+1, beta = current.params[3], rho = rho) * rho
-    rate2.addill = current.params[2] * zeta(n1, n2+1, beta = current.params[4], rho = rho) * rho
-    total.rate.addill = rate1.addill + rate2.addill - (rate1.baseline + rate2.baseline)
-    current.Q[2,2] = - total.rate.addill
-    current.Q[2,1] = (rate1.addill - rate1.baseline) 
-    current.Q[2,3] = (rate2.addill - rate2.baseline)
-    current.Q[3,1:3] = 0
+    n.vector.addnocav = n.vector; n.vector.addnocav[1] = n.vector.addnocav[1] + 1
+    rate.alive.addnocav = nu[1] * zeta(n.vector.addnocav, beta.alive, rho = rho) * rho
+    rate.death.addnocav = nu[2] * zeta(n.vector.addnocav, beta.dead, rho = rho) * rho
+    total.rate.addnocav = rate.alive.addnocav + rate.death.addnocav - (rate.alive.baseline + rate.death.baseline)
+    # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
     
-    # gap = current.global$time[t] - current.global$time[t-1]
+    n.vector.addmild = n.vector; n.vector.addmild[2] = n.vector.addmild[2] + 1
+    rate.alive.addmild = nu[1] * zeta(n.vector.addmild, beta.alive, rho = rho) * rho
+    rate.death.addmild = nu[2] * zeta(n.vector.addmild, beta.dead, rho = rho) * rho
+    total.rate.addmild = rate.alive.addmild + rate.death.addmild - (rate.alive.baseline + rate.death.baseline)
+    # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
+    trans.matrix.mild = matrix(0,nrow = 3, ncol = 3)
+    diag(trans.matrix.mild) = n.vector; trans.matrix.mild[2,1] = 1
+    temp.mildtonocav = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
+    trans.matrix.mild[2,1] = 0; trans.matrix.mild[2,3] = 1
+    temp.mildtosevere = q.split(trans.matrix.mild, beta.alive, alpha.alive.matrix, rho)
+    frac.mildtonocav = temp.mildtonocav/ (temp.mildtonocav + temp.mildtosevere)
+    
+    n.vector.addsevere = n.vector; n.vector.addsevere[3] = n.vector.addsevere[3] + 1
+    rate.alive.addsevere = nu[1] * zeta(n.vector.addsevere, beta.alive, rho = rho) * rho
+    rate.death.addsevere = nu[2] * zeta(n.vector.addsevere, beta.dead, rho = rho) * rho
+    total.rate.addsevere = rate.alive.addsevere + rate.death.addsevere - (rate.alive.baseline + rate.death.baseline)
+    # total.rate.addhealthy = rate1.addhealthy - rate1.baseline
+    
+    current.Q = matrix(nrow = 4, ncol = 4)
+    current.Q[1,1] = - total.rate.addnocav
+    current.Q[1,2] = (rate.alive.addnocav - rate.alive.baseline) 
+    current.Q[1,3] = 0
+    current.Q[1,4] = (rate.death.addnocav - rate.death.baseline)
+    
+    current.Q[2,2] = - total.rate.addmild
+    current.Q[2,1] = (rate.alive.addmild - rate.alive.baseline) * frac.mildtonocav
+    current.Q[2,3] = (rate.alive.addmild - rate.alive.baseline) * (1-frac.mildtonocav)
+    current.Q[2,4] = (rate.death.addmild - rate.death.baseline)
+    
+    current.Q[3,3] = - total.rate.addsevere
+    current.Q[3,2] = (rate.alive.addsevere - rate.alive.baseline)
+    current.Q[3,1] = 0
+    current.Q[3,4] = (rate.death.addsevere - rate.death.baseline)
+    
+    current.Q[4,1:4] = 0
     
     ## Expand on a 0.01 grid 
     ## To compute survival at these time
@@ -883,56 +900,98 @@ Survival.fit <- function(current.global, current.params, grid.length = 0.01) {
     computed.at.times = c(computed.at.times, temp.times[2:length(temp.times)])
     for (i in 1:length(diff.gaps)) {
       current.B = as.matrix(expm(current.Q*diff.gaps[i]))
-      Survival.inithealthy = Survival.inithealthy%*%current.B
-      Survival.inithealthy.matrix = cbind(Survival.inithealthy.matrix, t(Survival.inithealthy))
-      Survival.initill = Survival.initill%*%current.B
-      Survival.initill.matrix = cbind(Survival.initill.matrix, t(Survival.initill))
+      Survival.init.nocav = Survival.init.nocav%*%current.B
+      Survival.initnocav.matrix = cbind(Survival.initnocav.matrix, t(Survival.init.nocav))
+      Survival.init.mild = Survival.init.mild%*%current.B
+      Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
     }
     
     if (current.global$failure.time[t] != 1) { 
-      denominator = q.split(r1 = n1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[3], rho = rho)
       
-      current.B = matrix(0, nrow = 3, ncol = 3); current.B[3,3] = 1
+      temp.switch1 = current.global$switch1[t]; temp.switch2a = current.global$switch2a[t]
+      temp.switch2b = current.global$switch2b[t]; temp.switch3 = current.global$switch3[t]
+      ## Construct trans.matrix
+      r.nocav = num.nocav - temp.switch1; r.mild = num.mild - temp.switch2a - temp.switch2b;
+      r.severe = num.severe - temp.switch3;
+      if(r.mild < 0) {r.mild = 0}
+      trans.matrix = matrix(0, nrow = 3, ncol = 3)
+      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
+      trans.matrix[1,2] = temp.switch1; trans.matrix[2,1] = temp.switch2a; 
+      trans.matrix[2,3] = temp.switch2b; trans.matrix[3,2] = temp.switch3
       
-      numerator11 = q.split(r1 = n1 + 1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[3], rho = rho)
-      current.B[1,1] = numerator11/denominator; current.B[1,2] = 1 - current.B[1,1]
+      denominator = q.split(trans.matrix, beta.alive, alpha.alive.matrix, rho = rho)
       
-      numerator22 = q.split(r1 = n1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 + 1 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[3], rho = rho)
-      current.B[2,2] = numerator22/denominator; current.B[2,1] = 1 - current.B[2,2]
+      current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
       
-      Survival.inithealthy = Survival.inithealthy%*%current.B
-      Survival.inithealthy.matrix = cbind(Survival.inithealthy.matrix, t(Survival.inithealthy))
-      Survival.initill = Survival.initill%*%current.B
-      Survival.initill.matrix = cbind(Survival.initill.matrix, t(Survival.initill))
+      trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,2] = trans.matrix.addnocav[1,2] + 1
+      numerator12 = q.split(trans.matrix.addnocav, beta.alive, alpha.alive.matrix, rho)
+      
+      current.B[1,2] = numerator12/denominator; current.B[1,1] = 1 - current.B[1,2]
+      
+      trans.matrix.addmild.2 = trans.matrix.addmild.2a = trans.matrix.addmild.2b = trans.matrix; 
+      trans.matrix.addmild.2[2,2] = trans.matrix.addmild.2[2,2] + 1
+      trans.matrix.addmild.2a[2,1] = trans.matrix.addmild.2a[2,1] + 1
+      trans.matrix.addmild.2b[2,3] = trans.matrix.addmild.2b[2,3] + 1
+      numerator22 = q.split(trans.matrix.addmild.2, beta.alive, alpha.alive.matrix, rho)
+      temp.input21 = q.split(trans.matrix.addmild.2a, beta.alive, alpha.alive.matrix, rho)
+      temp.input23 = q.split(trans.matrix.addmild.2b, beta.alive, alpha.alive.matrix, rho)
+      
+      current.B[2,1] = temp.input21/denominator
+      current.B[2,3] = temp.input23/denominator
+      current.B[2,2] = 1-current.B[2,1] - current.B[2,3]
+      
+      trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,2] = trans.matrix.addsevere[3,2] + 1
+      numerator32 = q.split(trans.matrix.addsevere, beta.alive, alpha.alive.matrix, rho)
+      
+      current.B[3,2] = numerator32/denominator; current.B[3,3] = 1 - current.B[3,2]
+      
+      Survival.init.nocav = Survival.init.nocav%*%current.B
+      Survival.initnocav.matrix = cbind(Survival.initnocav.matrix, t(Survival.init.nocav))
+      
+      Survival.init.mild = Survival.init.mild%*%current.B
+      Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
       computed.at.times = c(computed.at.times, current.global$time[t])
       
     } else {
-      denominator = q.split(r1 = n1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[4], rho = rho)
       
-      current.B = matrix(0, nrow = 3, ncol = 3); current.B[3,3] = 1
+      temp.switch1 = current.global$switch1[t]; temp.switch2a = current.global$switch2a[t]
+      temp.switch2b = current.global$switch2b[t]; temp.switch3 = current.global$switch3[t]
+      ## Construct trans.matrix
+      r.nocav = num.nocav - temp.switch1; r.mild = num.mild - temp.switch2a - temp.switch2b;
+      r.severe = num.severe - temp.switch3;
+      if(r.mild < 0) {r.mild = 0}
+      trans.matrix = matrix(0, nrow = 3, ncol = 4)
+      diag(trans.matrix) = c(r.nocav, r.mild, r.severe);
+      trans.matrix[1,4] = temp.switch1; trans.matrix[2,4] = temp.switch2a + temp.switch2b; 
+      trans.matrix[3,4] = temp.switch3
       
-      numerator11 = q.split(r1 = n1 + 1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[4], rho = rho)
-      current.B[1,1] = numerator11/denominator; current.B[1,3] = 1 - current.B[1,1]
+      denominator = q.split(trans.matrix, beta.dead, alpha.death.matrix, rho = rho)
       
-      numerator22 = q.split(r1 = n1 - current.global$switch1[t], d1 = current.global$switch1[t], 
-                            r2 = n2 + 1 - current.global$switch2[t], d2 = current.global$switch2[t], 
-                            beta = current.params[4], rho = rho)
-      current.B[2,2] = numerator22/denominator; current.B[2,3] = 1 - current.B[2,2]
+      current.B = matrix(0, nrow = 4, ncol = 4); current.B[4,4] = 1
       
-      Survival.inithealthy = Survival.inithealthy%*%current.B
-      Survival.inithealthy.matrix = cbind(Survival.inithealthy.matrix, t(Survival.inithealthy))
-      Survival.initill = Survival.initill%*%current.B
-      Survival.initill.matrix = cbind(Survival.initill.matrix, t(Survival.initill))
+      trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,4] = trans.matrix.addnocav[1,4] + 1
+      numerator14 = q.split(trans.matrix.addnocav, beta.dead, alpha.death.matrix, rho)
+      
+      current.B[1,4] = numerator14/denominator; current.B[1,1] = 1 - current.B[1,2]
+      
+      trans.matrix.addmild.2 = trans.matrix; 
+      trans.matrix.addmild.2[2,4] = trans.matrix.addmild.2[2,4] + 1
+      numerator24 = q.split(trans.matrix.addmild.2, beta.dead, alpha.death.matrix, rho)
+
+      current.B[2,4] = numerator24/denominator
+      current.B[2,2] = 1-current.B[2,4]
+      
+      trans.matrix.addsevere = trans.matrix; trans.matrix.addsevere[3,4] = trans.matrix.addsevere[3,4] + 1
+      numerator34 = q.split(trans.matrix.addsevere, beta.dead, alpha.death.matrix, rho)
+      
+      current.B[3,4] = numerator34/denominator; current.B[3,3] = 1 - current.B[3,4]
+      
+      Survival.init.nocav = Survival.init.nocav%*%current.B
+      Survival.initnocav.matrix = cbind(Survival.initnocav.matrix, t(Survival.init.nocav))
+      
+      Survival.init.mild = Survival.init.mild%*%current.B
+      Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
+      
       computed.at.times = c(computed.at.times, current.global$time[t])
       
     }
