@@ -67,9 +67,15 @@ lik.component <- function(params, trans.matrix, isdeathtime, window.time, rho) {
     nu = params[1]*rho; beta = beta.alive; alpha = alpha.alive.matrix
   }
   
-  return(
-    log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, alpha, rho))
-  )
+  if( all(trans.matrix[row(trans.matrix)!=col(trans.matrix)] == 0) ) {
+    return(
+      log(nu) - total.rate*window.time
+    )
+  } else {
+    return(
+      log(nu) - total.rate*window.time + log(q.split(trans.matrix, beta, alpha, rho))
+    )
+  }
 }
 
 total.llik <- function(data, rho) {
@@ -103,7 +109,7 @@ total.llik <- function(data, rho) {
   return(subfunction)
 }
 
-convert.to.global <- function(person.data) {
+convert.to.global <- function(person.data, censoring.data) {
   ## Convert data to global configuration
   ## Assume each participant starts with initial obs
   ## At t = 0
@@ -122,21 +128,27 @@ convert.to.global <- function(person.data) {
   names(simdata) = c("time", "num.nocav", "num.mild", "num.severe", 
                      "num.dead", "switch1", "switch2a", 
                      "switch2b", "switch3", "failure.time")
-  if(nrow(person.data) == 0) {max.time = 0} else {max.time = max(person.data[,2])}
+  if(nrow(person.data) == 0) {max.time = 0} else {max.time = max(person.data$time, censoring.data$time)}
+  total.censored = 0
   
   while (current.time < max.time) {
-    next.time = min(person.data$time[person.data$time > current.time])
-    users.list = person.data$user[person.data$time == next.time]
+    next.time = min(person.data$time[person.data$time > current.time], 
+                    censoring.data$time[censoring.data$time > current.time])
+    trans.users.list = person.data$user[person.data$time == next.time]
     next.states = person.data$state[person.data$time == next.time]
     
-    temp = person.data[is.element(person.data$user,users.list) & person.data$time < next.time,]
+    censoring.users.list = censoring.data$user[censoring.data$time == next.time & 
+                                                 censoring.data$status == 0]
+    
+    temp = person.data[is.element(person.data$user,trans.users.list) & person.data$time < next.time,]
     switch1 = 0; switch2a = 0; switch2b = 0; switch3 = 0; failure.time = as.numeric(any(next.states==4))
     
-    for (user in users.list) {
+    for (user in trans.users.list) {
       temp.time = temp$time[temp$user == user]
       temp.state = temp$state[temp$user == user]
       previous.state = temp.state[temp.time == max(temp.time)]
-      next.state = next.states[users.list == user]
+      next.state = next.states[trans.users.list == user]
+      user.data = person.data[person.data$user == user,]
       if(previous.state == 1 & is.element(next.state, c(2,4)) ) {
         switch1 = switch1 + 1
       } else if (previous.state == 2 & is.element(next.state, c(1,4)) ) {
@@ -153,6 +165,7 @@ convert.to.global <- function(person.data) {
         switch2a = switch2a + 1
       }
     }
+        
     if (failure.time == 1) {
       num.nocav = num.nocav - switch1; num.mild = num.mild - switch2a - switch2b; 
       num.severe = num.severe - switch3; 
@@ -163,6 +176,21 @@ convert.to.global <- function(person.data) {
       num.severe = num.severe - switch3 + switch2b
       num.dead = num.dead
     }
+    
+    for (user in censoring.users.list) {
+      temp.data = person.data[person.data$user == user,]
+      final.state = temp.data$state[temp.data$time == max(temp.data$time)]
+      if (final.state == 1) {
+        num.nocav = num.nocav - 1; total.censored = total.censored + 1
+      } else if (final.state == 2) {
+        num.mild = num.mild - 1; total.censored = total.censored + 1
+      } else if (final.state == 3) {
+        num.severe = num.severe - 1; total.censored = total.censored + 1
+      }
+    }
+    # if(length(censoring.users.list) > 0 ) {print("This was a censoring time")}
+    # print(paste("total censored =",total.censored))
+    # print(paste("total dead =",num.dead))
     simdata = rbind(simdata, c(next.time, num.nocav, num.mild, 
                                num.severe, num.dead, switch1, switch2a,
                                switch2b, switch3, failure.time)
@@ -197,10 +225,10 @@ extract.patient <- function(all.person.obs.data, all.person.trans.data,
 }
 
 extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
-                                current.params, current.multiple = 5, rho = 10) {
+                                censoring.data, current.params, current.multiple = 5, rho = 10) {
   ## Generate the vector of Omega's for each window of time
   ## This changes at each transition time
-  other.global.trans.data = convert.to.global(other.person.trans.data)
+  other.global.trans.data = convert.to.global(other.person.trans.data, censoring.data)
   max.time = max(chosen.person.obs.data$time)
   other.global.trans.data.shortened = other.global.trans.data[other.global.trans.data$time < max.time, ]
   
@@ -261,7 +289,8 @@ extract.Omega.and.A <- function(chosen.person.obs.data, chosen.person.trans.data
   bar.Omega.time = c(bar.Omega.time, max.time)
   
   ## NOW DO FOR ALL PEOPLE TO CONSTRUCT A.t
-  all.global.trans.data = convert.to.global(rbind(other.person.trans.data, chosen.person.trans.data))
+  all.global.trans.data = convert.to.global(rbind(other.person.trans.data, chosen.person.trans.data),
+                                            censoring.data)
   all.global.trans.data.shortened = all.global.trans.data[all.global.trans.data$time < max.time, ]
   
   ## Construct rate functions 
@@ -331,12 +360,13 @@ generate.points <- function(bar.Omega, bar.Omega.time, bar.A, bar.A.time, max.ti
   return(new.potential.trans.times)
 }
 
-construct.info <- function(new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, chosen.person.obs.data, current.params) {
+construct.info <- function(new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, 
+                           chosen.person.obs.data, censoring.data, current.params) {
   ## Combine all the information necessary to perform 
   ## the filter forward, backward sampling algorithm.
   ## These are all trans times, obs times for patient,
   ## and all new potential trans times
-  other.global.trans.data = convert.to.global(other.person.trans.data)
+  other.global.trans.data = convert.to.global(other.person.trans.data,censoring.data)
   max.time = max(chosen.person.obs.data$time)
   other.global.trans.data.shortened = other.global.trans.data[other.global.trans.data$time <= max.time, ]
   ## Add in all the other ppl trans times
@@ -418,7 +448,7 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
   if(any(current.temp$person.obs.times == TRUE)) {
     L.matrix[,t] = as.numeric(1:4 == current.temp$person.obs.states[current.temp$person.obs.times == TRUE])
   } else {
-    L.matrix[,t] = rep(1, 3)
+    L.matrix[,t] = c(rep(1, 3),0)
   } 
   if ( any(!is.na(current.temp$num.nocav)) ) {
     num.nocav = current.temp$num.nocav[!is.na(current.temp$num.nocav)]
@@ -613,7 +643,7 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
     if(any(current.temp$person.obs.times == TRUE)) {
       L.matrix[,t] = as.numeric(1:4 == current.temp$person.obs.states[current.temp$person.obs.times == TRUE])
     } else {
-      L.matrix[,t] = rep(1, 4)
+      L.matrix[,t] = c(rep(1, 3),0)
     } 
     
     Alpha.matrix[,t] =  (L.matrix[,t-1] * Alpha.matrix[,t-1]) %*% current.B
@@ -678,23 +708,23 @@ build.new.all.person.trans.data <- function(new.trajectory, person.id, other.per
   )
 }
 
-sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data, 
+sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data, censoring.data,
                                  current.params, current.multiple, rho, 
                                  initial.iter = FALSE, max.attempts = 20) {
   all.users = unique(all.person.obs.data$user)
   if (initial.iter) { 
-    keep.users = c(); new.all.person.trans.data = c()
+    keep.users = c(); new.all.person.trans.data = c(); temp.censoring.data = c();
     for(patient.id in all.users) {
       # print(patient.id)
       keep.users = c(patient.id, keep.users)
       new.all.person.trans.data = rbind(new.all.person.trans.data, old.all.person.trans.data[is.element(old.all.person.trans.data$user,patient.id),])
+      temp.censoring.data = rbind(temp.censoring.data, censoring.data[is.element(censoring.data$user,patient.id),])
       new.all.person.obs.data = all.person.obs.data[is.element(all.person.obs.data$user,keep.users),]
       complete = FALSE; how.many.to.completion = 0; attempt = 1; temp.multiple = current.multiple
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
-        temp = try(sample.one.new.user(patient.id, keep.users, new.all.person.obs.data, 
-                                       new.all.person.trans.data, current.params, 
-                                       temp.multiple, rho, initial.iter), TRUE)
+        temp = try(sample.one.new.user(patient.id, keep.users, new.all.person.obs.data, new.all.person.trans.data, 
+                                       temp.censoring.data, current.params, temp.multiple, rho, initial.iter), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -721,9 +751,8 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
       max.attempts = 10; attempt = 1; temp.multiple = current.multiple
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
-        temp = try(sample.one.new.user(patient.id, all.users, new.all.person.obs.data, 
-                                       new.all.person.trans.data, current.params, 
-                                       temp.multiple, rho), TRUE)
+        temp = try(sample.one.new.user(patient.id, all.users, new.all.person.obs.data, new.all.person.trans.data, 
+                                       censoring.data, current.params, temp.multiple, rho), TRUE)
         if(!is(temp,"try-error")) {
           new.all.person.trans.data = temp
           complete = TRUE
@@ -744,8 +773,8 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
 }
 
 sample.one.new.user <- function(patient.id, all.users, all.person.obs.data, 
-                                all.person.trans.data, current.params, 
-                                current.multiple, rho, initial.iter = FALSE) {
+                                all.person.trans.data, censoring.data, 
+                                current.params, current.multiple, rho, initial.iter = FALSE) {
   # print(patient.id)
   temp.extract = extract.patient(all.person.obs.data, all.person.trans.data, patient.id)
   chosen.person.obs.data = temp.extract$chosen.person.obs.data
@@ -753,15 +782,22 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
   other.person.trans.data = temp.extract$other.person.trans.data
   max.time = max(chosen.person.obs.data$time)
   
+  temp.censoring.data = censoring.data[is.element(censoring.data$user,other.person.trans.data$user),]
+  
   temp.extractOmega.and.A = extract.Omega.and.A(chosen.person.obs.data, chosen.person.trans.data, other.person.trans.data, 
-                                    current.params, current.multiple = current.multiple , rho) 
+                                                temp.censoring.data, current.params, current.multiple = current.multiple , rho) 
   
   temp.new.potential.trans.times = generate.points(temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time, 
                                                    temp.extractOmega.and.A$bar.A, temp.extractOmega.and.A$bar.Omega.time,
                                                    max.time, initial.iter)
   
   temp.constructinfo = construct.info(temp.new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, 
-                                      chosen.person.obs.data, current.params)
+                                      chosen.person.obs.data, temp.censoring.data, current.params)
+  
+  ## REMOVE BAD OBS - Due to censoring
+  good.obs = (temp.constructinfo$new.trans.time == TRUE) | (temp.constructinfo$person.obs.times == TRUE) | 
+    (any(is.na(temp.constructinfo[,2:4]) == TRUE))
+  temp.constructinfo = temp.constructinfo[good.obs,]
   
   # NEED TO DEAL WITH CAN'T TRANS TO 4 PRIOR TO FAILURE TIME
   temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
@@ -800,17 +836,25 @@ beta.gibbs.updates <- function(data, new.nu.params, new.alpha.alive, current.par
   # proposal.alpha.params = rbeta(1, shape1 = temp.params[7] * prior.params$alpha.step.size, 
   #                               shape2 = (1 - temp.params[7]) * prior.params$alpha.step.size)
   proposal.params = c(temp.params[1:2], exp(proposal.beta.params), temp.params[7])
-  current.llik = total.llik(data, rho)(temp.params)
-  # current.prior.llik = -sum(log(dcauchy(proposal.beta.params, location = prior.params$log.mu, scale = prior.params$log.sd)))
-  # proposal.prior.llik = -sum(log(dcauchy(log(temp.params[3:4]), location = prior.params$log.mu, scale = prior.params$log.sd)))
-  current.prior.llik = -sum(log(dnorm(proposal.beta.params, mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.prior.llik = -sum(log(dnorm(log(temp.params[3:4]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.llik = total.llik(data, rho)(proposal.params)
-  acceptance.rate = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
-  accept.proposal = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate) ==1)
-  new.beta.params = accept.proposal * proposal.params + (1-accept.proposal) * temp.params
+  temp.proposal.params = new.params = temp.params
+  all.acceptance.rate = vector(length = 4)
+  for (which.beta in 1:4) {
+    # Sequentially perform accept/reject to avoid stickiness
+    current.llik = total.llik(data, rho)(new.params)
+    current.prior.llik = -sum(log(dnorm(log(temp.params[2+which.beta]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
+    
+    proposal.prior.llik = -sum(log(dnorm(proposal.beta.params[which.beta], mean = prior.params$log.mu, sd = prior.params$log.sd)))
+    temp.proposal.params[2 + which.beta]  = proposal.params[2 + which.beta] 
+    proposal.llik = total.llik(data, rho)(temp.proposal.params)
+    
+    acceptance.rate = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
+    accept.proposal = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate) ==1)
+    new.params = accept.proposal * temp.proposal.params + (1-accept.proposal) * temp.params
+    all.acceptance.rate[which.beta] = acceptance.rate
+  }
+  
   return(
-    list( "new.params" = new.beta.params, "accept" = accept.proposal, "accept.rate" = acceptance.rate)
+    list( "new.params" = new.params, "accept.rate" = all.acceptance.rate)
   )
 }
 
@@ -823,14 +867,17 @@ alpha.alive.gibbs.updates <- function(data, prior.params) {
   )
 }
 
-Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01) {
+Survival.fit <- function(current.global, current.params, rho, init.time, grid.length = 0.01) {
   
   unique.trans.times = unique(current.global$time)
-  Survival.init.nocav = c(1, 0, 0, 0); computed.at.times = c(0) 
+  Survival.init.nocav = c(1, 0, 0, 0); computed.at.times = c(init.time) 
   Survival.initnocav.matrix = as.matrix(Survival.init.nocav, ncol = 1)
   
-  Survival.init.mild = c(0, 1, 0, 0); computed.at.times = c(0) 
+  Survival.init.mild = c(0, 1, 0, 0); computed.at.times = c(init.time) 
   Survival.initmild.matrix = as.matrix(Survival.init.mild, ncol = 1)
+  
+  Survival.init.severe = c(0, 0, 1, 0); computed.at.times = c(init.time) 
+  Survival.initsevere.matrix = as.matrix(Survival.init.severe, ncol = 1)
   
   nu = current.params[1:2]; beta.alive = c(1,current.params[3:4]); beta.dead = c(1,current.params[5:6]); 
   alpha.alive = current.params[7]
@@ -904,9 +951,16 @@ Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01
       Survival.initnocav.matrix = cbind(Survival.initnocav.matrix, t(Survival.init.nocav))
       Survival.init.mild = Survival.init.mild%*%current.B
       Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
+      Survival.init.severe = Survival.init.severe%*%current.B
+      Survival.initsevere.matrix = cbind(Survival.initsevere.matrix, t(Survival.init.severe))
     }
     
-    if (current.global$failure.time[t] != 1) { 
+    
+    if (
+      ( (current.global$switch1[t] != 0) | current.global$switch2a[t] != 0 |
+        (current.global$switch2b[t] != 0) | (current.global$switch3[t] != 0) ) &  
+      (current.global$failure.time[t] == 0)
+    ) { 
       
       temp.switch1 = current.global$switch1[t]; temp.switch2a = current.global$switch2a[t]
       temp.switch2b = current.global$switch2b[t]; temp.switch3 = current.global$switch3[t]
@@ -950,9 +1004,13 @@ Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01
       
       Survival.init.mild = Survival.init.mild%*%current.B
       Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
+      
+      Survival.init.severe = Survival.init.severe%*%current.B
+      Survival.initsevere.matrix = cbind(Survival.initsevere.matrix, t(Survival.init.severe))
+      
       computed.at.times = c(computed.at.times, current.global$time[t])
       
-    } else {
+    } else if(current.global$failure.time[t] == 1) {
       
       temp.switch1 = current.global$switch1[t]; temp.switch2a = current.global$switch2a[t]
       temp.switch2b = current.global$switch2b[t]; temp.switch3 = current.global$switch3[t]
@@ -972,7 +1030,7 @@ Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01
       trans.matrix.addnocav = trans.matrix; trans.matrix.addnocav[1,4] = trans.matrix.addnocav[1,4] + 1
       numerator14 = q.split(trans.matrix.addnocav, beta.dead, alpha.death.matrix, rho)
       
-      current.B[1,4] = numerator14/denominator; current.B[1,1] = 1 - current.B[1,2]
+      current.B[1,4] = numerator14/denominator; current.B[1,1] = 1 - current.B[1,4]
       
       trans.matrix.addmild.2 = trans.matrix; 
       trans.matrix.addmild.2[2,4] = trans.matrix.addmild.2[2,4] + 1
@@ -992,6 +1050,9 @@ Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01
       Survival.init.mild = Survival.init.mild%*%current.B
       Survival.initmild.matrix = cbind(Survival.initmild.matrix, t(Survival.init.mild))
       
+      Survival.init.severe = Survival.init.severe%*%current.B
+      Survival.initsevere.matrix = cbind(Survival.initsevere.matrix, t(Survival.init.severe))
+      
       computed.at.times = c(computed.at.times, current.global$time[t])
       
     }
@@ -1000,8 +1061,9 @@ Survival.fit <- function(current.global, current.params, rho, grid.length = 0.01
   
   return(cbind(
     computed.at.times,
-    Survival.inithealthy.matrix[3,],
-    Survival.initill.matrix[3,]
+    Survival.initnocav.matrix[4,],
+    Survival.initmild.matrix[4,],
+    Survival.initsevere.matrix[4,]
   ))
   
 }
