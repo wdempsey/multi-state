@@ -313,7 +313,9 @@ generate.points <- function(bar.Omega, bar.Omega.time, bar.A, bar.A.time, initia
   return(new.potential.trans.times)
 }
 
-construct.info <- function(new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, chosen.person.obs.data, current.params) {
+construct.info <- function(new.potential.trans.times, chosen.person.trans.data, 
+                           other.person.trans.data, chosen.person.obs.data, 
+                           current.params, initial.iter) {
   ## Combine all the information necessary to perform 
   ## the filter forward, backward sampling algorithm.
   ## These are all trans times, obs times for patient,
@@ -330,19 +332,21 @@ construct.info <- function(new.potential.trans.times, chosen.person.trans.data, 
   all.trans.times$new.trans.time = FALSE
   
   ## Add in prior runs trans times for current person
-  which.person.time.include = !is.element(chosen.person.trans.data$time, all.trans.times$time)
-  temp.persontrans = chosen.person.trans.data[which.person.time.include,]
-  temp.failure.time = as.numeric(temp.persontrans$state == 3)
-  temp.persontrans = data.frame(time = temp.persontrans$time)
-  if(nrow(temp.persontrans) != 0) {
-    temp.persontrans$num.healthy = NA; temp.persontrans$num.ill = NA
-    temp.persontrans$switch1 = 0; temp.persontrans$switch2 = 0
-    temp.persontrans$person.obs.times = FALSE
-    temp.persontrans$person.obs.states = NA
-    temp.persontrans$new.trans.time = FALSE
-    temp.persontrans$failure.time = temp.failure.time
-    all.trans.times = rbind(all.trans.times,temp.persontrans)
-  }    
+  if(!initial.iter) {
+    which.person.time.include = !is.element(chosen.person.trans.data$time, all.trans.times$time)
+    temp.persontrans = chosen.person.trans.data[which.person.time.include,]
+    temp.failure.time = as.numeric(temp.persontrans$state == 3)
+    temp.persontrans = data.frame(time = temp.persontrans$time)
+    if(nrow(temp.persontrans) != 0) {
+      temp.persontrans$num.healthy = NA; temp.persontrans$num.ill = NA
+      temp.persontrans$switch1 = 0; temp.persontrans$switch2 = 0
+      temp.persontrans$person.obs.times = FALSE
+      temp.persontrans$person.obs.states = NA
+      temp.persontrans$new.trans.time = FALSE
+      temp.persontrans$failure.time = temp.failure.time
+      all.trans.times = rbind(all.trans.times,temp.persontrans)
+    }    
+  }
   ## Add in potential new trans times
   if(length(new.potential.trans.times) != 0) {
     temp.newtrans = data.frame(time = new.potential.trans.times)
@@ -385,7 +389,7 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
   if(any(current.temp$person.obs.times == TRUE)) {
     L.matrix[,t] = as.numeric(1:3 == current.temp$person.obs.states[current.temp$person.obs.times == TRUE])
   } else {
-    L.matrix[,t] = rep(1, 3)
+    L.matrix[,t] = c(1,1,0)
   } 
   if ( any(!is.na(current.temp$num.healthy)) ) {
     n1 = current.temp$num.healthy[!is.na(current.temp$num.healthy)]
@@ -501,7 +505,7 @@ filterfwd.backsampl <- function(all.trans.times, current.params, rho, bar.Omega,
     if(any(current.temp$person.obs.times == TRUE)) {
       L.matrix[,t] = as.numeric(1:3 == current.temp$person.obs.states[current.temp$person.obs.times == TRUE])
     } else {
-      L.matrix[,t] = rep(1, 3)
+      L.matrix[,t] = c(1,1,0)
     } 
     
     Alpha.matrix[,t] =  (L.matrix[,t-1] * Alpha.matrix[,t-1]) %*% current.B
@@ -570,14 +574,15 @@ sample.all.new.users <- function(all.person.obs.data, old.all.person.trans.data,
       keep.users = c(patient.id, keep.users)
       new.all.person.trans.data = rbind(new.all.person.trans.data, old.all.person.trans.data[is.element(old.all.person.trans.data$user,patient.id),])
       new.all.person.obs.data = all.person.obs.data[is.element(all.person.obs.data$user,keep.users),]
-      all.users = keep.users
       complete = FALSE; how.many.to.completion = 0; attempt = 1
       while(complete == FALSE) {
         how.many.to.completion = how.many.to.completion + 1
         temp = try(sample.one.new.user(patient.id, all.users, new.all.person.obs.data, 
                                        new.all.person.trans.data, current.params, 
                                        current.multiple, rho, initial.iter), TRUE)
+        obs.max = max(new.all.person.obs.data$time[new.all.person.obs.data$user == patient.id]) 
         if(!is(temp,"try-error")) {
+          if(max(temp$time[temp$user == patient.id]) != obs.max) {print(patient.id); break}
           new.all.person.trans.data = temp
           complete = TRUE
         } else {
@@ -638,7 +643,7 @@ sample.one.new.user <- function(patient.id, all.users, all.person.obs.data,
                                                    initial.iter)
   
   temp.constructinfo = construct.info(temp.new.potential.trans.times, chosen.person.trans.data, other.person.trans.data, 
-                                      chosen.person.obs.data, current.params)
+                                      chosen.person.obs.data, current.params, initial.iter)
   
   temp.newsample <- filterfwd.backsampl(temp.constructinfo, current.params, rho, temp.extractOmega.and.A$bar.Omega, temp.extractOmega.and.A$bar.Omega.time)
   
@@ -675,12 +680,18 @@ beta.gibbs.updates <- function(data, new.nu.params, current.params, rho, prior.p
   current.llik = total.llik(data, rho)(temp.params)
   # current.prior.llik = -sum(log(dcauchy(proposal.beta.params, location = prior.params$log.mu, scale = prior.params$log.sd)))
   # proposal.prior.llik = -sum(log(dcauchy(log(temp.params[3:4]), location = prior.params$log.mu, scale = prior.params$log.sd)))
-  current.prior.llik = -sum(log(dnorm(proposal.beta.params, mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.prior.llik = -sum(log(dnorm(log(temp.params[3:4]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
-  proposal.llik = total.llik(data, rho)(proposal.params)
-  acceptance.rate = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
-  accept.proposal = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate) ==1)
-  new.beta.params = accept.proposal * proposal.params + (1-accept.proposal) * temp.params
+  new.beta.params = temp.params
+  accept.proposal = acceptance.rate = vector(length = 2)
+  for (i in 1:2) {
+    current.prior.llik = -sum(log(dnorm(proposal.beta.params[i], mean = prior.params$log.mu, sd = prior.params$log.sd)))
+    proposal.prior.llik = -sum(log(dnorm(log(temp.params[i+2]), mean = prior.params$log.mu, sd = prior.params$log.sd)))
+    temp.proposal.params = new.beta.params; temp.proposal.params[i+2] = proposal.params[i+2]
+    proposal.llik = total.llik(data, rho)(temp.proposal.params)
+    acceptance.rate[i] = min(1, exp(current.llik + current.prior.llik - proposal.llik - proposal.prior.llik)  )
+    accept.proposal[i] = as.logical(rbinom(n = 1, size = 1, prob = acceptance.rate[i]) ==1)
+    new.beta.params = accept.proposal * temp.proposal.params + (1-accept.proposal) * new.beta.params
+  }
+  
   return(
     list( "new.params" = new.beta.params, "accept" = accept.proposal, "accept.rate" = acceptance.rate)
   )

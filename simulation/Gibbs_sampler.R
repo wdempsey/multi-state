@@ -34,25 +34,28 @@ truth = c(1/2, 1/5, 0.65, 1.71)
 ### SHOULD CONVERGE TO SENSIBLE SAMPLED TRAJECTORIES
 ### RUN 500 times, and then estimate the parameters 
 ### using total.llik -> should be close to truth
-iter = 1; max.iter = 1000; smooth.to.iter = 100
+iter = 1; max.iter = 1000; smooth.to.iter = 1000
 init.multiple = 5; final.multiple = 2
 current.params = truth
-prior.params = data.frame(alpha = 1, beta = 1, log.mu = 0, log.sd = 1, step.size = 0.15)
+prior.params = data.frame(alpha = 1, beta = 1, log.mu = 0, log.sd = 1, step.size = 0.1)
 all.users = unique(all.person.obs.data$user)
-posterior.results = matrix(nrow = length(truth), ncol = max.iter)
-acceptance.rate.results = vector(length = max.iter)
+posterior.results = matrix(ncol = length(truth), nrow = max.iter)
+acceptance.rate.results = matrix(nrow = max.iter, ncol = 2)
 person.global.data.list = list()
 set.seed("1283714")
+update.global.every = 25
 
 for (iter in 1:max.iter) {
   current.multiple = max(final.multiple, init.multiple + (final.multiple - init.multiple) / (smooth.to.iter-1) * (iter-1))
   ## Cycle through all users once for now
   ## GENERATE INITIAL TRANSITIONS
   is.it.initial.iter = as.logical(iter == 1)
-  new.all.person.trans.data = sample.all.new.users(all.person.obs.data, all.person.trans.data, 
-                                                   current.params, current.multiple, rho, 
-                                                   initial.iter = is.it.initial.iter) 
-  new.all.person.global.data = convert.to.global(new.all.person.trans.data)
+  if (iter %% update.global.every == 1) {
+    new.all.person.trans.data = sample.all.new.users(all.person.obs.data, all.person.trans.data,
+                                                     current.params, current.multiple, rho,
+                                                     initial.iter = is.it.initial.iter)
+    new.all.person.global.data = convert.to.global(new.all.person.trans.data)
+  }
   new.nu.params = nu.gibbs.updates(new.all.person.global.data, current.params, rho, prior.params)
   new.beta.params = beta.gibbs.updates(new.all.person.global.data, new.nu.params, current.params, rho, prior.params)
   print(paste("For iteration = ", iter,". We have parameters", sep = ""))
