@@ -140,27 +140,37 @@ convert.to.global <- function(person.data, censoring.data) {
     censoring.users.list = censoring.data$user[censoring.data$time == next.time & 
                                                  censoring.data$status == 0]
     
+    ## Grab all data prior to the next.time for the users who are observed
+    ## at that time. This is so we can compute how they transitioned!
     temp = person.data[is.element(person.data$user,trans.users.list) & person.data$time < next.time,]
     switch1 = 0; switch2a = 0; switch2b = 0; switch3 = 0; failure.time = as.numeric(any(next.states==4))
     
     for (user in trans.users.list) {
+      ## Iterate over all users in cohort with data at next.time
+      ## Either all failures or all transitions at time t
       temp.time = temp$time[temp$user == user]
       temp.state = temp$state[temp$user == user]
       previous.state = temp.state[temp.time == max(temp.time)]
       next.state = next.states[trans.users.list == user]
       user.data = person.data[person.data$user == user,]
       if(previous.state == 1 & is.element(next.state, c(2,4)) ) {
+        ## Switch out of no Cav 
         switch1 = switch1 + 1
       } else if (previous.state == 2 & is.element(next.state, c(1,4)) ) {
+        ## Switch out of mild to no cav or death
         switch2a = switch2a + 1
       } else if (previous.state == 2 & next.state == 3) {
+        ## Switch out of mild to severe
         switch2b = switch2b + 1
       } else if (previous.state == 3 & is.element(next.state, c(2,4)) ) {
+        ## Switch out of severe
         switch3 = switch3 + 1
       } else if (previous.state == 1 & next.state == 3) {
+        ## Account for a double jump from no cav to severe
         switch1 = switch1 + 1
         switch2b = switch2b + 1
       } else if (previous.state == 3 & next.state == 1) {
+        ## Account for a double jump from severe to no cav
         switch3 = switch3 + 1
         switch2a = switch2a + 1
       }
