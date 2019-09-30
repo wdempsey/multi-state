@@ -85,9 +85,9 @@ plot(global.data$time, 1-result.distribution[,4], xlim = c(0,20), ylim = c(0,1),
 library(expm)
 
 llik.parametric = logLik.iid(person.data)
-parameters = c(rep(1,3), rep(1/3, 12))
-lower.bound = c(rep(0.01,3), rep(0.1, 9)); 
-upper.bound = c(rep(10,3), rep(0.9, 9)); 
+parameters = rep(1/3, 9)
+lower.bound = rep(0.00001, 9)
+upper.bound = rep(10,9)
 mle.parameter = optim(par = parameters, fn = llik.parametric, lower = lower.bound, upper = upper.bound)
 
 mle.parameter
