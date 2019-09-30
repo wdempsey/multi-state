@@ -1077,3 +1077,29 @@ Survival.fit <- function(current.global, current.params, rho, init.time, grid.le
   ))
   
 }
+
+
+
+logLik.iid <- function(person.data) {
+  internal.fn <- function(parameters) {
+    ## Log Likelihood for iid data
+    ## Sum over people 
+    P = matrix(nrow = 3, ncol = 4)
+    diag(P) = 0
+    nu = parameters[1:3]
+    P[1,2:4] = parameters[4:6]; P[2,c(1,3:4)] = parameters[7:9]
+    P[3,c(1:2,4)] = parameters[10:12]
+    loglik.total = 0
+    for (user in unique(person.data$user)) {
+      user.data = person.data[person.data$user == user,]
+      for (row in 1:(nrow(user.data)-1)) {
+        gap = user.data$time[row+1] - user.data$time[row]
+        current.state = user.data$state[row]
+        next.state = user.data$state[row+1]
+        loglik.total = loglik.total + -nu[current.state]*gap + log(nu[current.state]) + P[current.state, next.state]
+      }
+    }
+    return(-loglik.total)
+  }
+  return(internal.fn)
+}
