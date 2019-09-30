@@ -1084,11 +1084,11 @@ logLik.iid <- function(person.data) {
   internal.fn <- function(parameters) {
     ## Log Likelihood for iid data
     ## Sum over people 
-    P = matrix(nrow = 3, ncol = 4)
-    diag(P) = 0
-    nu = parameters[1:3]
-    P[1,2:4] = parameters[4:6]; P[2,c(1,3:4)] = parameters[7:9]
-    P[3,c(1:2,4)] = parameters[10:12]
+    Q = matrix(nrow = 4, ncol = 4)
+    Q[1,2:4] = parameters[1:3]; Q[1,1] = - sum(Q[1,2:4])
+    Q[2,c(1,3:4)] = parameters[4:6]; Q[2,2] = - sum(Q[2,c(1,3:4)])
+    Q[3,c(1:2,4)] = parameters[7:9]; Q[3,3] = - sum(Q[3, c(1:2,4)])
+    Q[4,1:4] = 0
     loglik.total = 0
     for (user in unique(person.data$user)) {
       user.data = person.data[person.data$user == user,]
@@ -1096,7 +1096,13 @@ logLik.iid <- function(person.data) {
         gap = user.data$time[row+1] - user.data$time[row]
         current.state = user.data$state[row]
         next.state = user.data$state[row+1]
-        loglik.total = loglik.total + -nu[current.state]*gap + log(nu[current.state]) + P[current.state, next.state]
+        trans.P = expm(Q*gap)
+        if(next.state != 4) {
+          loglik.total = loglik.total + log(trans.P[current.state, next.state])
+        } else {
+          
+          loglik.total = loglik.total + log(sum(-trans.P[current.state, 1:3] * Q[1:3,4]/Q[1,1]))
+        }
       }
     }
     return(-loglik.total)

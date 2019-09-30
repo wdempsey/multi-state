@@ -82,6 +82,7 @@ plot(global.data$time, 1-result.distribution[,4], xlim = c(0,20), ylim = c(0,1),
 
 
 ### FULLY PARAMETRIC MODEL
+library(expm)
 
 llik.parametric = logLik.iid(person.data)
 parameters = c(rep(1,3), rep(1/3, 12))
