@@ -40,54 +40,83 @@ rho = 10 # Assume rho is fixed throughout
 
 ## Generate the survival curve under non-parametric
 ## estimator where observations = transition times.
-init.distribution = c(1,0,0,0)
-current.distribution = init.distribution
-result.distribution = matrix(nrow = nrow(global.data), ncol = 4)
-result.distribution[1,] = current.distribution
-
-for (iter in 2:nrow(global.data)) {
-  
-  # IS IT A FAILURE TIME
-  is_fail_time = global.data$failure.time[iter] == 1
-  ## Calc transition to failure from each state
-  if(is_fail_time) {
-    stay_nocav = global.data$num.nocav[iter]/global.data$num.nocav[iter-1]
-    stay_mild = global.data$num.mild[iter]/global.data$num.mild[iter-1]; if(is.nan(stay_mild)) {stay_mild=1}
-    stay_severe = global.data$num.severe[iter]/global.data$num.severe[iter-1]; if(is.nan(stay_severe)) {stay_severe=1}
-    
-    current.distribution[4] = current.distribution[4] + sum(current.distribution[1:3] * (1 - c(stay_nocav, stay_mild, stay_severe)))
-    current.distribution[1:3] = current.distribution[1:3] * c(stay_nocav, stay_mild, stay_severe)
-    current.distribution
-  } else {
-    nocav_to_mild = global.data$switch1[iter]/global.data$num.nocav[iter-1]; if(is.nan(nocav_to_mild)){nocav_to_mild = 0}
-    mild_to_nocav = global.data$switch2a[iter]/global.data$num.mild[iter-1]; if(is.nan(mild_to_nocav)){mild_to_nocav = 0}
-    mild_to_severe = global.data$switch2b[iter]/global.data$num.mild[iter-1]; if(is.nan(mild_to_severe)){mild_to_severe = 0}
-    severe_to_mild = global.data$switch3[iter]/global.data$num.severe[iter-1]; if(is.nan(severe_to_mild)){severe_to_mild = 0}
-    
-    if(mild_to_severe == Inf) {
-      current.distribution[1] = current.distribution[1] * (1-nocav_to_mild) 
-      current.distribution[3] = current.distribution[3] + current.distribution[1] * nocav_to_mild
-    } else {
-      current.distribution[1] = current.distribution[1] * (1-nocav_to_mild) + current.distribution[2] * mild_to_nocav
-      current.distribution[2] = current.distribution[1] * nocav_to_mild + current.distribution[2] * (1- mild_to_nocav - mild_to_severe) + current.distribution[3] * severe_to_mild
-      current.distribution[3] = current.distribution[3] * (1-severe_to_mild) + current.distribution[2] * mild_to_severe
-    }
-    
-  }
-  result.distribution[iter,] = current.distribution
-}
-
-
-plot(global.data$time, 1-result.distribution[,4], xlim = c(0,20), ylim = c(0,1), type = "l")
+result.distribution.nocav = nonparametric_estimator(c(1,0,0,0), global.data)
+result.distribution.severe = nonparametric_estimator(c(0,0,1,0), global.data)
 
 
 ### FULLY PARAMETRIC MODEL
 library(expm)
 
 llik.parametric = logLik.iid(person.data)
-parameters = rep(1/3, 9)
+parameters = rep(0.1, 7)
 lower.bound = rep(0.00001, 9)
-upper.bound = rep(10,9)
-mle.parameter = optim(par = parameters, fn = llik.parametric, lower = lower.bound, upper = upper.bound)
+upper.bound = rep(1,9)
+# mle.parameter = optim(par = parameters, fn = llik.parametric, lower = lower.bound, upper = upper.bound)
 
-mle.parameter
+mle.parameters = c(0.04116865, 0.01627384, 0.12346032,
+                  0.35751591, 0.04557379, 0.13354901, 0.30483947)
+
+## CONSTRUCT Q MATRIX
+Q = matrix(0, nrow = 4, ncol = 4)
+Q[1,c(2,4)] = mle.parameters[1:2]; Q[1,1] = - sum(Q[1,2:4])
+Q[2,c(1,3:4)] = mle.parameters[3:5]; Q[2,2] = - sum(Q[2,c(1,3:4)])
+Q[3,c(2,4)] = mle.parameters[6:7]; Q[3,3] = - sum(Q[3, c(1:2,4)])
+Q[4,1:4] = 0
+
+survival.list.nocav = survival.list.severe = vector(length = length(global.data$time))
+
+for(iter in 1:length(global.data$time)) {
+  current.time = global.data$time[iter]
+  P = expm(Q*current.time)
+  survival.list.nocav[iter] = sum(P[1,1:3])
+  survival.list.severe[iter] = sum(P[3,1:3])
+}
+
+
+## My results
+Survival.list = readRDS("C:/Users/wdem/Dropbox/Dissertation Work/Markov State Process/multi-state/cav/survival-fits.RDS")
+max.iter = 1000; min.iter = 50
+survival.grid = seq(0,20,0.1)
+nocav.survival.plot.matrix = mild.survival.plot.matrix = 
+  severe.survival.plot.matrix = matrix(nrow = length(survival.grid), ncol = max.iter - min.iter + 1)
+
+
+for (iter in min.iter:max.iter) {
+  temp.surv = Survival.list[[iter]]
+  
+  for (i in 1:length(survival.grid)) {
+    temp.abs.diff = abs(temp.surv[,1] - survival.grid[i])
+    temp.entry.to.use = min(which( temp.abs.diff == min(temp.abs.diff) ))
+    nocav.survival.plot.matrix[i, iter - min.iter + 1] = temp.surv[temp.entry.to.use,2]
+    mild.survival.plot.matrix[i, iter - min.iter + 1] = temp.surv[temp.entry.to.use,3]
+    severe.survival.plot.matrix[i, iter - min.iter + 1] = temp.surv[temp.entry.to.use,4]
+  }
+}
+
+quantiles.survival.mild = quantiles.survival.nocav = 
+  quantiles.survival.severe = matrix(nrow = length(survival.grid), ncol = 3)
+
+for (i in 1:nrow(quantiles.survival.nocav)) {
+  quantiles.survival.nocav[i,] = as.vector(quantile(nocav.survival.plot.matrix[i,], prob = c(0.05, 0.50, 0.95)))
+  quantiles.survival.mild[i,] = as.vector(quantile(mild.survival.plot.matrix[i,], prob = c(0.05, 0.50, 0.95)))
+  quantiles.survival.severe[i,] = as.vector(quantile(severe.survival.plot.matrix[i,], prob = c(0.05, 0.50, 0.95)))
+}
+
+
+### FULL PLOT 
+
+png(filename = "C:/Users/wdem/Dropbox/Dissertation Work/Markov State Process/multi-state/cav/cav-comparison-plot.png", 
+    width = 480, height = 480, units = "px", pointsize = 12, bg = "white")
+
+par(mar = c(5,4,2,1)+ 0.1)
+plot(global.data$time, 1 - result.distribution.nocav[,4], 
+     xlim = c(0,20), ylim = c(0,1), type = "l", bty = 'n',
+     xlab = "Time in study", ylab = "Survival function")
+lines(global.data$time, 1 - result.distribution.severe[,4], lty = 2)
+
+lines(global.data$time, survival.list.nocav, col = "red")
+lines(global.data$time, survival.list.severe, col = "red", lty = 2)
+
+lines(survival.grid, 1 - quantiles.survival.nocav[,2], col = "blue")
+lines(survival.grid, 1 - quantiles.survival.severe[,2], col = "blue", lty = 2)
+dev.off()

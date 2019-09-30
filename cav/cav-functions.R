@@ -1084,10 +1084,10 @@ logLik.iid <- function(person.data) {
   internal.fn <- function(parameters) {
     ## Log Likelihood for iid data
     ## Sum over people 
-    Q = matrix(nrow = 4, ncol = 4)
-    Q[1,2:4] = parameters[1:3]; Q[1,1] = - sum(Q[1,2:4])
-    Q[2,c(1,3:4)] = parameters[4:6]; Q[2,2] = - sum(Q[2,c(1,3:4)])
-    Q[3,c(1:2,4)] = parameters[7:9]; Q[3,3] = - sum(Q[3, c(1:2,4)])
+    Q = matrix(0, nrow = 4, ncol = 4)
+    Q[1,c(2,4)] = parameters[1:2]; Q[1,1] = - sum(Q[1,2:4])
+    Q[2,c(1,3:4)] = parameters[3:5]; Q[2,2] = - sum(Q[2,c(1,3:4)])
+    Q[3,c(2,4)] = parameters[6:7]; Q[3,3] = - sum(Q[3, c(1:2,4)])
     Q[4,1:4] = 0
     loglik.total = 0
     for (user in unique(person.data$user)) {
@@ -1108,4 +1108,44 @@ logLik.iid <- function(person.data) {
     return(-loglik.total)
   }
   return(internal.fn)
+}
+
+
+nonparametric_estimator <- function(init.distribution, global.data) {
+  current.distribution = init.distribution
+  result.distribution = matrix(nrow = nrow(global.data), ncol = 4)
+  result.distribution[1,] = current.distribution
+  
+  for (iter in 2:nrow(global.data)) {
+    
+    # IS IT A FAILURE TIME
+    is_fail_time = global.data$failure.time[iter] == 1
+    ## Calc transition to failure from each state
+    if(is_fail_time) {
+      stay_nocav = global.data$num.nocav[iter]/global.data$num.nocav[iter-1]
+      stay_mild = global.data$num.mild[iter]/global.data$num.mild[iter-1]; if(is.nan(stay_mild)) {stay_mild=1}
+      stay_severe = global.data$num.severe[iter]/global.data$num.severe[iter-1]; if(is.nan(stay_severe)) {stay_severe=1}
+      
+      current.distribution[4] = current.distribution[4] + sum(current.distribution[1:3] * (1 - c(stay_nocav, stay_mild, stay_severe)))
+      current.distribution[1:3] = current.distribution[1:3] * c(stay_nocav, stay_mild, stay_severe)
+      current.distribution
+    } else {
+      nocav_to_mild = global.data$switch1[iter]/global.data$num.nocav[iter-1]; if(is.nan(nocav_to_mild)){nocav_to_mild = 0}
+      mild_to_nocav = global.data$switch2a[iter]/global.data$num.mild[iter-1]; if(is.nan(mild_to_nocav)){mild_to_nocav = 0}
+      mild_to_severe = global.data$switch2b[iter]/global.data$num.mild[iter-1]; if(is.nan(mild_to_severe)){mild_to_severe = 0}
+      severe_to_mild = global.data$switch3[iter]/global.data$num.severe[iter-1]; if(is.nan(severe_to_mild)){severe_to_mild = 0}
+      
+      if(mild_to_severe == Inf) {
+        current.distribution[1] = current.distribution[1] * (1-nocav_to_mild) 
+        current.distribution[3] = current.distribution[3] + current.distribution[1] * nocav_to_mild
+      } else {
+        current.distribution[1] = current.distribution[1] * (1-nocav_to_mild) + current.distribution[2] * mild_to_nocav
+        current.distribution[2] = current.distribution[1] * nocav_to_mild + current.distribution[2] * (1- mild_to_nocav - mild_to_severe) + current.distribution[3] * severe_to_mild
+        current.distribution[3] = current.distribution[3] * (1-severe_to_mild) + current.distribution[2] * mild_to_severe
+      }
+      
+    }
+    result.distribution[iter,] = current.distribution
+  }
+  return(result.distribution)
 }
