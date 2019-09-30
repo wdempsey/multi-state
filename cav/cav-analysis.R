@@ -9,6 +9,19 @@ library(msm)
 person.data = data.frame(cbind(cav$PTNUM, cav$years, cav$state))
 names(person.data) = c("user", "time", "state")
 unique.users = unique(person.data$user)
+
+## Remove agreement of failure and state obs times
+## Add a small tolerance term epsilon = 10^-6
+epsilon = 10^-6
+death.times = person.data$time[person.data$state == 4]
+obs.times = person.data$time[person.data$state != 4]
+bad.death.times = unique(death.times[(is.element(death.times, obs.times))])
+for(times in bad.death.times) {
+  bad.obs = which(person.data$time == times & person.data$state == 4)
+  person.data$time[bad.obs] = person.data$time[bad.obs] + epsilon
+}
+
+## Figure out who died and who is censored times
 death.data = c()
 
 for(i in 1:length(unique.users)) {
